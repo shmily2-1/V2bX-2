@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/InazumaV/V2bX/common/crypt"
+	"github.com/shmily2-1/V2bX-2/common/crypt"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/curve25519"

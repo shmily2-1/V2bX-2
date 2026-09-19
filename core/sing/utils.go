@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/InazumaV/V2bX/conf"
 	"github.com/sagernet/sing-box/option"
+	"github.com/shmily2-1/V2bX-2/conf"
 )
 
 func processFallback(c *conf.Options, fallbackForALPN map[string]*option.ServerOptions) error {

@@ -2,19 +2,21 @@ package sing
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"sync"
 
 	"github.com/sagernet/sing-box/include"
 	"github.com/sagernet/sing-box/log"
 
-	"github.com/InazumaV/V2bX/conf"
-	vCore "github.com/InazumaV/V2bX/core"
 	box "github.com/sagernet/sing-box"
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing/common/json"
+	"github.com/shmily2-1/V2bX-2/conf"
+	vCore "github.com/shmily2-1/V2bX-2/core"
 )
 
 var _ vCore.Core = (*Sing)(nil)
@@ -25,6 +27,9 @@ type DNSConfig struct {
 }
 
 type Sing struct {
+	nodesMu                   sync.RWMutex
+	portRedirects             map[string]io.Closer
+	closed                    bool
 	box                       *box.Box
 	ctx                       context.Context
 	hookServer                *HookServer
@@ -45,7 +50,7 @@ func init() {
 
 func New(c *conf.CoreConfig) (vCore.Core, error) {
 	ctx := context.Background()
-	ctx = box.Context(ctx, include.InboundRegistry(), include.OutboundRegistry(), include.EndpointRegistry(), include.DNSTransportRegistry(), include.ServiceRegistry())
+	ctx = box.Context(ctx, include.InboundRegistry(), include.OutboundRegistry(), include.EndpointRegistry(), include.DNSTransportRegistry(), include.ServiceRegistry(), include.CertificateProviderRegistry())
 	options := option.Options{}
 	if len(c.SingConfig.OriginalPath) != 0 {
 		data, err := os.ReadFile(c.SingConfig.OriginalPath)
@@ -84,7 +89,7 @@ func New(c *conf.CoreConfig) (vCore.Core, error) {
 	}
 	b.Router().AppendTracker(hs)
 	return &Sing{
-		ctx:        b.Router().GetCtx(),
+		ctx:        ctx,
 		box:        b,
 		hookServer: hs,
 		router:     b.Router(),
@@ -93,6 +98,7 @@ func New(c *conf.CoreConfig) (vCore.Core, error) {
 			uidMap: make(map[string]int),
 		},
 		nodeReportMinTrafficBytes: make(map[string]int64),
+		portRedirects:             make(map[string]io.Closer),
 	}, nil
 }
 
@@ -101,7 +107,21 @@ func (b *Sing) Start() error {
 }
 
 func (b *Sing) Close() error {
-	return b.box.Close()
+	b.nodesMu.Lock()
+	defer b.nodesMu.Unlock()
+	var errs []error
+	if !b.closed {
+		errs = append(errs, b.box.Close())
+		b.closed = true
+	}
+	for tag, redirect := range b.portRedirects {
+		if err := redirect.Close(); err != nil {
+			errs = append(errs, err)
+		} else {
+			delete(b.portRedirects, tag)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 func (b *Sing) Protocols() []string {

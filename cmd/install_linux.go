@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/InazumaV/V2bX/common/exec"
+	"github.com/shmily2-1/V2bX-2/common/exec"
 	"github.com/spf13/cobra"
 )
 
@@ -16,9 +16,9 @@ var (
 		Use:   "update",
 		Short: "Update V2bX version",
 		Run: func(_ *cobra.Command, _ []string) {
-			exec.RunCommandStd("bash",
-				"<(curl -Ls https://raw.githubusercontents.com/InazumaV/V2bX-script/master/install.sh)",
-				targetVersion)
+			fmt.Println("V2bX-2 updates are installed from github.com/shmily2-1/V2bX-2 releases.")
+			fmt.Println("Download and review scripts/install.sh from this repository, then run: sudo bash install.sh", targetVersion)
+			fmt.Println("No upstream installer has been executed; existing configuration is unchanged.")
 		},
 		Args: cobra.NoArgs,
 	}
@@ -41,6 +41,7 @@ func uninstallHandle(_ *cobra.Command, _ []string) {
 	fmt.Scan(&yes)
 	if strings.ToLower(yes) != "y" {
 		fmt.Println("已取消卸载")
+		return
 	}
 	_, err := exec.RunCommandByShell("systemctl stop V2bX&&systemctl disable V2bX")
 	if err != nil {

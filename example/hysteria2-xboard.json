@@ -1,0 +1,18 @@
+{
+  "Log": { "Level": "info" },
+  "Cores": [{ "Type": "hysteria2", "Log": { "Level": "info" } }],
+  "Nodes": [{
+    "Core": "hysteria2",
+    "ApiHost": "https://panel.example.com",
+    "ApiKey": "REPLACE_WITH_YOUR_PANEL_KEY",
+    "NodeID": 1,
+    "NodeType": "hysteria",
+    "ListenIP": "0.0.0.0",
+    "CertConfig": {
+      "CertMode": "file",
+      "CertDomain": "node.example.com",
+      "CertFile": "/etc/V2bX/fullchain.pem",
+      "KeyFile": "/etc/V2bX/privkey.pem"
+    }
+  }]
+}

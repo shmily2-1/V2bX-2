@@ -4,11 +4,11 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/InazumaV/V2bX/api/panel"
-	"github.com/InazumaV/V2bX/common/task"
-	"github.com/InazumaV/V2bX/conf"
-	vCore "github.com/InazumaV/V2bX/core"
-	"github.com/InazumaV/V2bX/limiter"
+	"github.com/shmily2-1/V2bX-2/api/panel"
+	"github.com/shmily2-1/V2bX-2/common/task"
+	"github.com/shmily2-1/V2bX-2/conf"
+	vCore "github.com/shmily2-1/V2bX-2/core"
+	"github.com/shmily2-1/V2bX-2/limiter"
 	log "github.com/sirupsen/logrus"
 )
 

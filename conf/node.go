@@ -9,7 +9,7 @@ import (
 
 	"encoding/json"
 
-	"github.com/InazumaV/V2bX/common/json5"
+	"github.com/shmily2-1/V2bX-2/common/json5"
 )
 
 type NodeConfig struct {

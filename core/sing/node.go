@@ -3,6 +3,7 @@ package sing
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net/netip"
 	"net/url"
@@ -12,11 +13,12 @@ import (
 
 	"encoding/json"
 
-	"github.com/InazumaV/V2bX/api/panel"
-	"github.com/InazumaV/V2bX/conf"
 	"github.com/sagernet/sing-box/option"
 	F "github.com/sagernet/sing/common/format"
 	"github.com/sagernet/sing/common/json/badoption"
+	"github.com/shmily2-1/V2bX-2/api/panel"
+	"github.com/shmily2-1/V2bX-2/common/porthop"
+	"github.com/shmily2-1/V2bX-2/conf"
 )
 
 type HttpNetworkConfig struct {
@@ -88,6 +90,9 @@ func getInboundOptions(tag string, info *panel.NodeInfo, c *conf.Options) (optio
 			tls.KeyPath = c.CertConfig.KeyFile
 		}
 	case panel.Reality:
+		if info.VAllss.TlsSettings.Xver != 0 {
+			return option.Inbound{}, fmt.Errorf("sing-box 1.14 does not support Reality Xver; use the xray core for PROXY protocol")
+		}
 		tls.Enabled = true
 		v := info.VAllss
 		tls.ServerName = v.TlsSettings.ServerName
@@ -104,7 +109,6 @@ func getInboundOptions(tag string, info *panel.NodeInfo, c *conf.Options) (optio
 			Enabled:    true,
 			ShortID:    []string{v.TlsSettings.ShortId},
 			PrivateKey: v.TlsSettings.PrivateKey,
-			Xver:       uint8(v.TlsSettings.Xver),
 			Handshake: option.InboundRealityHandshakeOptions{
 				ServerOptions: option.ServerOptions{
 					Server:     dest,
@@ -395,7 +399,17 @@ func getInboundOptions(tag string, info *panel.NodeInfo, c *conf.Options) (optio
 }
 
 func (b *Sing) AddNode(tag string, info *panel.NodeInfo, config *conf.Options) error {
-	b.nodeReportMinTrafficBytes[tag] = config.ReportMinTraffic * 1024
+	b.nodesMu.Lock()
+	defer b.nodesMu.Unlock()
+	if b.closed {
+		return fmt.Errorf("sing core is closed")
+	}
+	if _, exists := b.box.Inbound().Get(tag); exists {
+		return fmt.Errorf("node %q already exists", tag)
+	}
+	if _, exists := b.portRedirects[tag]; exists {
+		return fmt.Errorf("node %q has pending firewall cleanup", tag)
+	}
 	c, err := getInboundOptions(tag, info, config)
 	if err != nil {
 		return err
@@ -413,14 +427,41 @@ func (b *Sing) AddNode(tag string, info *panel.NodeInfo, config *conf.Options) e
 	if err != nil {
 		return fmt.Errorf("add inbound error: %s", err)
 	}
+	if info.Type == "hysteria2" {
+		redirect, hopErr := porthop.Setup(tag, config.ListenIP, info.Common.ServerPort, info.Hysteria2.Ports)
+		if redirect != nil {
+			b.portRedirects[tag] = redirect
+		}
+		if hopErr != nil {
+			return errors.Join(hopErr, in.Remove(tag), b.closePortRedirect(tag))
+		}
+	}
+	b.nodeReportMinTrafficBytes[tag] = config.ReportMinTraffic * 1024
 	return nil
 }
 
 func (b *Sing) DelNode(tag string) error {
+	b.nodesMu.Lock()
+	defer b.nodesMu.Unlock()
 	in := b.box.Inbound()
-	err := in.Remove(tag)
-	if err != nil {
-		return fmt.Errorf("delete inbound error: %s", err)
+	var err error
+	if _, exists := in.Get(tag); exists {
+		err = in.Remove(tag)
+	} else if _, pending := b.portRedirects[tag]; !pending {
+		return fmt.Errorf("node %q not found", tag)
+	}
+	delete(b.nodeReportMinTrafficBytes, tag)
+	b.hookServer.counter.Delete(tag)
+	return errors.Join(err, b.closePortRedirect(tag))
+}
+
+// Caller holds nodesMu. Retain failed cleanup so Close/DelNode can retry.
+func (b *Sing) closePortRedirect(tag string) error {
+	if redirect, exists := b.portRedirects[tag]; exists {
+		if err := redirect.Close(); err != nil {
+			return err
+		}
+		delete(b.portRedirects, tag)
 	}
 	return nil
 }

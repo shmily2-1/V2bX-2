@@ -11,15 +11,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/InazumaV/V2bX/api/panel"
-	"github.com/InazumaV/V2bX/conf"
 	"github.com/apernet/hysteria/core/v2/server"
-	"github.com/apernet/hysteria/extras/v2/correctnet"
 	"github.com/apernet/hysteria/extras/v2/masq"
 	"github.com/apernet/hysteria/extras/v2/obfs"
 	"github.com/apernet/hysteria/extras/v2/outbounds"
 	"github.com/apernet/hysteria/extras/v2/sniff"
 	eUtils "github.com/apernet/hysteria/extras/v2/utils"
+	"github.com/shmily2-1/V2bX-2/api/panel"
+	"github.com/shmily2-1/V2bX-2/conf"
 	"go.uber.org/zap"
 )
 
@@ -133,7 +132,14 @@ func (n *Hysteria2node) getConn(info *panel.NodeInfo, config *conf.Options) (net
 	if err != nil {
 		return nil, err
 	}
-	conn, err := correctnet.ListenUDP("udp", uAddr)
+	network := "udp"
+	if uAddr.IP.To4() != nil {
+		network = "udp4"
+	}
+	// Match sing-box: 0.0.0.0 is IPv4-only, :: is the dual-stack wildcard.
+	// correctnet turns :: into udp6 (IPv6-only), which would disagree with
+	// the port-hopping IPv4/IPv6 redirect rules.
+	conn, err := net.ListenUDP(network, uAddr)
 	if err != nil {
 		return nil, err
 	}
@@ -141,12 +147,14 @@ func (n *Hysteria2node) getConn(info *panel.NodeInfo, config *conf.Options) (net
 	case "", "plain":
 		return conn, nil
 	case "salamander":
-		ob, err := obfs.NewSalamanderObfuscator([]byte(info.Hysteria2.ObfsPassword))
+		wrapped, err := obfs.WrapPacketConnSalamander(conn, []byte(info.Hysteria2.ObfsPassword))
 		if err != nil {
+			conn.Close()
 			return nil, err
 		}
-		return obfs.WrapPacketConn(conn, ob), nil
+		return wrapped, nil
 	default:
+		conn.Close()
 		return nil, fmt.Errorf("unsupported obfuscation type")
 	}
 }
@@ -380,7 +388,7 @@ func (n *Hysteria2node) getMasqHandler(tlsconfig *server.TLSConfig, conn net.Pac
 	return MasqHandler, nil
 }
 
-func (n *Hysteria2node) getHyConfig(info *panel.NodeInfo, config *conf.Options, c *serverConfig) (*server.Config, error) {
+func (n *Hysteria2node) getHyConfig(info *panel.NodeInfo, config *conf.Options, c *serverConfig) (result *server.Config, err error) {
 	tls, err := n.getTLSConfig(config)
 	if err != nil {
 		return nil, err
@@ -393,6 +401,11 @@ func (n *Hysteria2node) getHyConfig(info *panel.NodeInfo, config *conf.Options, 
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		if err != nil {
+			_ = conn.Close()
+		}
+	}()
 	sniff, err := n.getRequestHook(c)
 	if err != nil {
 		return nil, err

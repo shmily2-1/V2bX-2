@@ -1,0 +1,5 @@
+.git
+build_assets
+dist
+*.zip
+*.exe

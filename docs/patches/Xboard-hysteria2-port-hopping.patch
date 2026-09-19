@@ -1,0 +1,127 @@
+diff --git a/app/Services/ServerService.php b/app/Services/ServerService.php
+index 1271b92..28a8b42 100644
+--- a/app/Services/ServerService.php
++++ b/app/Services/ServerService.php
+@@ -248,6 +248,29 @@ class ServerService
+         );
+     }
+ 
++    private static function buildHysteria2PortHoppingConfig(Server $node): array
++    {
++        // The public port range and the backend's single listening port are
++        // different fields. Keep this aligned with the subscription exporters.
++        $port = trim((string) $node->port);
++        if (!preg_match('/^([0-9]{1,5})(?:-([0-9]{1,5}))?$/D', $port, $matches)) {
++            throw new \InvalidArgumentException('Hysteria2 port must be a single port or start-end range; comma lists are not supported by Xboard subscriptions.');
++        }
++        $first = (int) $matches[1];
++        $last = isset($matches[2]) ? (int) $matches[2] : $first;
++        if ($first < 1 || $last > 65535 || $first > $last) {
++            throw new \InvalidArgumentException('Hysteria2 ports must be an ascending range within 1..65535.');
++        }
++        $interval = data_get($node->protocol_settings, 'hop_interval');
++        if ($interval !== null && (int) $interval !== 0 && (int) $interval < 5) {
++            throw new \InvalidArgumentException('Hysteria2 hop_interval must be at least 5 seconds, or empty/0 for the client default.');
++        }
++        return [
++            'ports' => isset($matches[2]) ? "{$first}-{$last}" : null,
++            'hop_interval' => $interval === null ? null : (int) $interval,
++        ];
++    }
++
+     public static function buildNodeConfig(Server $node): array
+     {
+         $nodeType = $node->type;
+@@ -320,6 +343,7 @@ class ServerService
+                         2 => [
+                             'obfs' => $protocolSettings['obfs']['open'] ? $protocolSettings['obfs']['type'] : null,
+                             'obfs-password' => $protocolSettings['obfs']['password'] ?? null,
++                            ...self::buildHysteria2PortHoppingConfig($node),
+                         ],
+                         default => [],
+                     },
+diff --git a/tests/Unit/Hysteria2PortHoppingTest.php b/tests/Unit/Hysteria2PortHoppingTest.php
+new file mode 100644
+index 0000000..bdc7b6a
+--- /dev/null
++++ b/tests/Unit/Hysteria2PortHoppingTest.php
+@@ -0,0 +1,79 @@
++<?php
++
++namespace Tests\Unit;
++
++use App\Models\Server;
++use App\Services\ServerService;
++use PHPUnit\Framework\TestCase;
++
++// No Laravel application boot, database connection, Redis, or network requests.
++final class Hysteria2PortHoppingTest extends TestCase
++{
++    private function node(string $port, array $settings = []): Server
++    {
++        return (new Server())->forceFill([
++            'type' => 'hysteria',
++            'host' => 'localhost',
++            'port' => $port,
++            'server_port' => 8443,
++            'protocol_settings' => array_replace_recursive([
++                'version' => 2,
++                'tls' => ['server_name' => 'localhost'],
++                'bandwidth' => ['up' => 100, 'down' => 100],
++                'obfs' => ['open' => false],
++            ], $settings),
++        ]);
++    }
++
++    public function testRangeDoesNotReplaceBackendListener(): void
++    {
++        $config = ServerService::buildNodeConfig($this->node('20000-30000', ['hop_interval' => 30]));
++        self::assertSame(8443, $config['server_port']);
++        self::assertSame('20000-30000', $config['ports']);
++        self::assertSame(30, $config['hop_interval']);
++        self::assertSame(2, $config['version']);
++        self::assertNull($config['obfs']);
++    }
++
++    public function testSinglePortAndDefaultIntervalStayOptional(): void
++    {
++        $config = ServerService::buildNodeConfig($this->node('8443'));
++        self::assertNull($config['ports']);
++        self::assertNull($config['hop_interval']);
++    }
++
++    public function testHysteriaOneUnchanged(): void
++    {
++        $config = ServerService::buildNodeConfig($this->node('20000-30000', ['version' => 1]));
++        self::assertArrayNotHasKey('ports', $config);
++        self::assertArrayNotHasKey('hop_interval', $config);
++    }
++
++    public function testObfuscationAndChildPortPreserved(): void
++    {
++        $child = $this->node('22000-23000', ['obfs' => ['open' => true, 'type' => 'salamander', 'password' => 'test-only']]);
++        $child->setRelation('parent', $this->node('20000-21000'));
++        $config = ServerService::buildNodeConfig($child);
++        self::assertSame('22000-23000', $config['ports']);
++        self::assertSame('salamander', $config['obfs']);
++        self::assertSame('test-only', $config['obfs-password']);
++    }
++
++    public function testUnsupportedOrMalformedPortsFailExplicitly(): void
++    {
++        foreach (['20000,20002', '30000-20000', '0-100', '1-65536', '20000-', '*'] as $port) {
++            try {
++                ServerService::buildNodeConfig($this->node($port));
++                self::fail("Expected invalid port: {$port}");
++            } catch (\InvalidArgumentException $exception) {
++                self::assertStringContainsString('Hysteria2', $exception->getMessage());
++            }
++        }
++    }
++
++    public function testTooShortIntervalRejected(): void
++    {
++        $this->expectException(\InvalidArgumentException::class);
++        ServerService::buildNodeConfig($this->node('20000-30000', ['hop_interval' => 4]));
++    }
++}

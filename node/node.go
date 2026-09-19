@@ -3,9 +3,9 @@ package node
 import (
 	"fmt"
 
-	"github.com/InazumaV/V2bX/api/panel"
-	"github.com/InazumaV/V2bX/conf"
-	vCore "github.com/InazumaV/V2bX/core"
+	"github.com/shmily2-1/V2bX-2/api/panel"
+	"github.com/shmily2-1/V2bX-2/conf"
+	vCore "github.com/shmily2-1/V2bX-2/core"
 )
 
 type Node struct {

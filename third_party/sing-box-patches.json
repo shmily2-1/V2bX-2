@@ -1,0 +1,69 @@
+{
+  "module": "github.com/sagernet/sing-box",
+  "version": "v1.14.1",
+  "module_sum": "h1:LumpcrArE3cxXYxoKhNN4yOQq1TeaEEuKWHCokodO9M=",
+  "upstream_commit": "1ac1a339cb1223e9c70eae14c44411c75033c02d",
+  "omitted_top_level": [
+    ".github",
+    ".gitignore",
+    ".goreleaser.yaml",
+    "docs",
+    "mkdocs.yml",
+    "release",
+    "test"
+  ],
+  "patches": {
+    "protocol/anytls/anytls_user.go": {
+      "upstream_sha256": null,
+      "patched_sha256": "3f14b9a93c1ef1b8df567f6af0cce3787be52772011c9af676cbaf5debd2c209"
+    },
+    "protocol/anytls/inbound.go": {
+      "upstream_sha256": "bce224ce39fd69504fed58c6b2d93e62ff7ae795441ca9cf18747763aeb634d1",
+      "patched_sha256": "1e94803abe6b4852a10a128c940ff1c874996ff547cc86ea6d4530a4f34ea89a"
+    },
+    "protocol/hysteria/hysteria_user.go": {
+      "upstream_sha256": null,
+      "patched_sha256": "f7926399dbe47f2664217cdbac3cde68ef9415c7695a0ce5d97b3502fb80629f"
+    },
+    "protocol/hysteria2/hysteria2_user.go": {
+      "upstream_sha256": null,
+      "patched_sha256": "b9a6018adc301c2fd4a992e53c77fe04602d9328cde4cdb5f8812cf42ca945d5"
+    },
+    "protocol/hysteria2/inbound.go": {
+      "upstream_sha256": "f7959dd2a86ddf282cd96d9ddafd1e776bc84cf47e5e99e3fa36cddd0ca1b980",
+      "patched_sha256": "002aa7d49a0924771f825eeb598cbd1549f7d53ced967e51bb48f6109cd75362"
+    },
+    "protocol/shadowsocks/shadowsocks_user.go": {
+      "upstream_sha256": null,
+      "patched_sha256": "40b307489fc0878269a8888458c6276a7720f7f7f4460cf40c14f614b2e7179a"
+    },
+    "protocol/trojan/inbound.go": {
+      "upstream_sha256": "6521afdd9afc8215f96278763b06c7a25f15b7bc7861c9805e397a311bf03c2c",
+      "patched_sha256": "b1f73d6797d9b80e40dd36f9d483e3777d370c3988b9930eb1a4e40dcb731874"
+    },
+    "protocol/trojan/trojan_user.go": {
+      "upstream_sha256": null,
+      "patched_sha256": "6d69f0415ed1a73a8914c4036df7eee307d905bc90e84d1e20522db32f8f44a3"
+    },
+    "protocol/tuic/inbound.go": {
+      "upstream_sha256": "fa7647b3b7f93523c871e5b64c0da1bd4632306729f9f328cc8c0ebd48114b72",
+      "patched_sha256": "4cc0dc8432264231b90f99c599147863ec4d1b255d6c3e66e599a2610edf4e8d"
+    },
+    "protocol/tuic/tuic_user.go": {
+      "upstream_sha256": null,
+      "patched_sha256": "04e55239c596b9f06cde746db4ea5984e1ad17cff2e494e899678105c0883968"
+    },
+    "protocol/vless/inbound.go": {
+      "upstream_sha256": "17b4cd26fd0629576f5ac11530cfd4b26ebe0f1b41746e712f4602e2dc42ab57",
+      "patched_sha256": "69c194215bbd06f6a4c2d99b25d093ae54493f06af816d7c405a70e7a117faa1"
+    },
+    "protocol/vless/vless_user.go": {
+      "upstream_sha256": null,
+      "patched_sha256": "e56974a1a8ee1d9bfe1714a6e20cf6781da8df85805bb2d6a01fd7397c7f4077"
+    },
+    "protocol/vmess/vmess_user.go": {
+      "upstream_sha256": null,
+      "patched_sha256": "e0bec8728114dc693ca7f962bb574ec1c91d74c1f526b7ee547dbbc5def699be"
+    }
+  }
+}

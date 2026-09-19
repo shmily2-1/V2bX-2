@@ -6,21 +6,28 @@ import (
 	"net"
 	"sync"
 
-	"github.com/InazumaV/V2bX/common/format"
-	"github.com/InazumaV/V2bX/common/rate"
+	"github.com/shmily2-1/V2bX-2/common/format"
+	"github.com/shmily2-1/V2bX-2/common/rate"
 
-	"github.com/InazumaV/V2bX/limiter"
+	"github.com/shmily2-1/V2bX-2/limiter"
 
-	"github.com/InazumaV/V2bX/common/counter"
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/log"
+	tun "github.com/sagernet/sing-tun"
 	N "github.com/sagernet/sing/common/network"
+	"github.com/shmily2-1/V2bX-2/common/counter"
 )
 
 var _ adapter.ConnectionTracker = (*HookServer)(nil)
 
 type HookServer struct {
 	counter sync.Map //map[string]*counter.TrafficCounter
+}
+
+// V2bX creates proxy inbounds, not TUN inbounds. TUN fast-path flows have
+// no panel user identity and are deliberately not billed as proxy users.
+func (h *HookServer) RoutedFlow(context.Context, adapter.InboundContext, adapter.Rule, adapter.Outbound) tun.FlowTracker {
+	return nil
 }
 
 func (h *HookServer) ModeList() []string {

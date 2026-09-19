@@ -2,4 +2,4 @@
 
 package imports
 
-import _ "github.com/InazumaV/V2bX/core/hy2"
+import _ "github.com/shmily2-1/V2bX-2/core/hy2"

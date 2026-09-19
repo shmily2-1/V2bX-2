@@ -4,9 +4,6 @@ import (
 	"encoding/base64"
 	"errors"
 
-	"github.com/InazumaV/V2bX/api/panel"
-	"github.com/InazumaV/V2bX/common/counter"
-	"github.com/InazumaV/V2bX/core"
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing-box/protocol/anytls"
 	"github.com/sagernet/sing-box/protocol/hysteria"
@@ -16,6 +13,9 @@ import (
 	"github.com/sagernet/sing-box/protocol/tuic"
 	"github.com/sagernet/sing-box/protocol/vless"
 	"github.com/sagernet/sing-box/protocol/vmess"
+	"github.com/shmily2-1/V2bX-2/api/panel"
+	"github.com/shmily2-1/V2bX-2/common/counter"
+	"github.com/shmily2-1/V2bX-2/core"
 )
 
 func (b *Sing) AddUsers(p *core.AddUsersParams) (added int, err error) {
@@ -135,6 +135,9 @@ func (b *Sing) GetUserTraffic(tag, uuid string, reset bool) (up int64, down int6
 }
 
 func (b *Sing) GetUserTrafficSlice(tag string, reset bool) ([]panel.UserTraffic, error) {
+	b.nodesMu.RLock()
+	minTraffic := b.nodeReportMinTrafficBytes[tag]
+	b.nodesMu.RUnlock()
 	trafficSlice := make([]panel.UserTraffic, 0)
 	hook := b.hookServer
 	b.users.mapLock.RLock()
@@ -146,7 +149,7 @@ func (b *Sing) GetUserTrafficSlice(tag string, reset bool) ([]panel.UserTraffic,
 			traffic := value.(*counter.TrafficStorage)
 			up := traffic.UpCounter.Load()
 			down := traffic.DownCounter.Load()
-			if up+down > b.nodeReportMinTrafficBytes[tag] {
+			if up+down > minTraffic {
 				if reset {
 					traffic.UpCounter.Store(0)
 					traffic.DownCounter.Store(0)

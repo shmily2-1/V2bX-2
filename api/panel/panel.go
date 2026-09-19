@@ -10,8 +10,8 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/InazumaV/V2bX/conf"
 	"github.com/go-resty/resty/v2"
+	"github.com/shmily2-1/V2bX-2/conf"
 )
 
 // Panel is the interface for different panel's api.
@@ -36,7 +36,7 @@ func New(c *conf.ApiConfig) (*Client, error) {
 		client = resty.NewWithLocalAddr(&net.TCPAddr{
 			IP: net.ParseIP(c.APISendIP),
 		})
-	} else {	
+	} else {
 		client = resty.New()
 	}
 	client.SetRetryCount(3)

@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"encoding/json"
+
+	"github.com/shmily2-1/V2bX-2/common/porthop"
 )
 
 // Security type
@@ -125,6 +127,7 @@ type AnyTlsNode struct {
 
 type HysteriaNode struct {
 	CommonNode
+	Version  int    `json:"version"`
 	UpMbps   int    `json:"up_mbps"`
 	DownMbps int    `json:"down_mbps"`
 	Obfs     string `json:"obfs"`
@@ -132,6 +135,9 @@ type HysteriaNode struct {
 
 type Hysteria2Node struct {
 	CommonNode
+	Version                 int    `json:"version"`
+	Ports                   string `json:"ports"`
+	HopInterval             int    `json:"hop_interval"` // Client-side seconds; the server does not hop.
 	Ignore_Client_Bandwidth bool   `json:"ignore_client_bandwidth"`
 	UpMbps                  int    `json:"up_mbps"`
 	DownMbps                int    `json:"down_mbps"`
@@ -157,18 +163,22 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 		ForceContentType("application/json").
 		Get(path)
 
+	if err != nil {
+		return nil, fmt.Errorf("get node config: %w", err)
+	}
+	if r == nil {
+		return nil, fmt.Errorf("received nil response")
+	}
 	if r.StatusCode() == 304 {
 		return nil, nil
+	}
+	if err = c.checkResponse(r, path, err); err != nil {
+		return nil, err
 	}
 	hash := sha256.Sum256(r.Body())
 	newBodyHash := hex.EncodeToString(hash[:])
 	if c.responseBodyHash == newBodyHash {
 		return nil, nil
-	}
-	c.responseBodyHash = newBodyHash
-	c.nodeEtag = r.Header().Get("ETag")
-	if err = c.checkResponse(r, path, err); err != nil {
-		return nil, err
 	}
 
 	if r != nil {
@@ -244,24 +254,36 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 		cm = &rsp.CommonNode
 		node.AnyTls = rsp
 		node.Security = Tls
-	case "hysteria":
-		rsp := &HysteriaNode{}
-		err = json.Unmarshal(r.Body(), rsp)
-		if err != nil {
-			return nil, fmt.Errorf("decode hysteria params error: %s", err)
-		}
-		cm = &rsp.CommonNode
-		node.Hysteria = rsp
-		node.Security = Tls
-	case "hysteria2":
+	case "hysteria", "hysteria2":
 		rsp := &Hysteria2Node{}
 		err = json.Unmarshal(r.Body(), rsp)
 		if err != nil {
 			return nil, fmt.Errorf("decode hysteria2 params error: %s", err)
 		}
-		cm = &rsp.CommonNode
-		node.Hysteria2 = rsp
+		if rsp.Version < 0 || rsp.Version > 2 || (c.NodeType == "hysteria2" && rsp.Version == 1) {
+			return nil, fmt.Errorf("incompatible hysteria version %d for node_type=%s", rsp.Version, c.NodeType)
+		}
+		if c.NodeType == "hysteria2" || rsp.Version == 2 {
+			if _, err = porthop.Parse(rsp.Ports); err != nil {
+				return nil, err
+			}
+			if rsp.HopInterval < 0 || (rsp.HopInterval > 0 && rsp.HopInterval < 5) {
+				return nil, fmt.Errorf("hop_interval must be 0 (client default) or at least 5 seconds")
+			}
+			node.Type = "hysteria2" // Keep the HTTP query's node_type unchanged for Xboard.
+			node.Hysteria2 = rsp
+			cm = &rsp.CommonNode
+		} else {
+			rsp1 := &HysteriaNode{}
+			if err = json.Unmarshal(r.Body(), rsp1); err != nil {
+				return nil, err
+			}
+			node.Hysteria = rsp1
+			cm = &rsp1.CommonNode
+		}
 		node.Security = Tls
+	default:
+		return nil, fmt.Errorf("unsupported node_type=%s", c.NodeType)
 	}
 
 	// parse rules and dns
@@ -305,18 +327,27 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 	}
 
 	// set interval
-	node.PushInterval = intervalToTime(cm.BaseConfig.PushInterval)
-	node.PullInterval = intervalToTime(cm.BaseConfig.PullInterval)
+	node.PushInterval, node.PullInterval = time.Minute, time.Minute
+	if cm.BaseConfig != nil {
+		node.PushInterval = intervalToTime(cm.BaseConfig.PushInterval)
+		node.PullInterval = intervalToTime(cm.BaseConfig.PullInterval)
+	}
 
 	node.Common = cm
 	// clear
 	cm.Routes = nil
 	cm.BaseConfig = nil
+	// Invalid responses must not poison ETag/body caching and suppress retries.
+	c.responseBodyHash = newBodyHash
+	c.nodeEtag = r.Header().Get("ETag")
 
 	return node, nil
 }
 
 func intervalToTime(i interface{}) time.Duration {
+	if i == nil {
+		return time.Minute
+	}
 	switch reflect.TypeOf(i).Kind() {
 	case reflect.Int:
 		return time.Duration(i.(int)) * time.Second

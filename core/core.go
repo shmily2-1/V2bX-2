@@ -3,7 +3,7 @@ package core
 import (
 	"errors"
 
-	"github.com/InazumaV/V2bX/conf"
+	"github.com/shmily2-1/V2bX-2/conf"
 )
 
 var (

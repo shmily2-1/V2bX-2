@@ -6,11 +6,14 @@ import (
 
 func TestConf_LoadFromPath(t *testing.T) {
 	c := New()
-	t.Log(c.LoadFromPath("../example/config.json"), c.NodeConfig)
+	if err := c.LoadFromPath("../example/config.json"); err != nil {
+		t.Fatal(err)
+	}
 }
 
-func TestConf_Watch(t *testing.T) {
+func TestConf_MissingFile(t *testing.T) {
 	c := New()
-	t.Log(c.Watch("./1.json", "", "", func() {}))
-	select {}
+	if err := c.LoadFromPath(t.TempDir() + "/missing.json"); err == nil {
+		t.Fatal("expected an error for a missing configuration")
+	}
 }

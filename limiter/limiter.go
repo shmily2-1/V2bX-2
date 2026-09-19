@@ -7,10 +7,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/InazumaV/V2bX/api/panel"
-	"github.com/InazumaV/V2bX/common/format"
-	"github.com/InazumaV/V2bX/conf"
 	"github.com/juju/ratelimit"
+	"github.com/shmily2-1/V2bX-2/api/panel"
+	"github.com/shmily2-1/V2bX-2/common/format"
+	"github.com/shmily2-1/V2bX-2/conf"
 )
 
 var limitLock sync.RWMutex

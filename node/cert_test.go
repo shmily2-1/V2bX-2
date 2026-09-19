@@ -1,3 +1,6 @@
+//go:build integration
+
+// Legacy certificate test writes fixed paths; excluded from hermetic CI.
 package node
 
 import "testing"

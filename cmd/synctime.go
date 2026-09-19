@@ -3,8 +3,8 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/InazumaV/V2bX/common/systime"
 	"github.com/beevik/ntp"
+	"github.com/shmily2-1/V2bX-2/common/systime"
 	"github.com/spf13/cobra"
 )
 

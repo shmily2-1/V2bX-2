@@ -11,8 +11,8 @@ import (
 
 	"encoding/json"
 
-	"github.com/InazumaV/V2bX/api/panel"
-	"github.com/InazumaV/V2bX/conf"
+	"github.com/shmily2-1/V2bX-2/api/panel"
+	"github.com/shmily2-1/V2bX-2/conf"
 	"github.com/xtls/xray-core/common/net"
 	"github.com/xtls/xray-core/core"
 	coreConf "github.com/xtls/xray-core/infra/conf"
@@ -42,6 +42,13 @@ func buildInbound(option *conf.Options, nodeInfo *panel.NodeInfo, tag string) (*
 	}
 	if err != nil {
 		return nil, err
+	}
+	if network == "" {
+		network = "tcp"
+	}
+	if in.StreamSetting == nil {
+		t := coreConf.TransportProtocol(network)
+		in.StreamSetting = &coreConf.StreamConfig{Network: &t}
 	}
 	// Set network protocol
 	// Set server port
@@ -209,12 +216,11 @@ func buildV2ray(config *conf.Options, nodeInfo *panel.NodeInfo, inbound *coreCon
 		}
 		inbound.Settings = (*json.RawMessage)(&s)
 	}
+	t := coreConf.TransportProtocol(v.Network)
+	inbound.StreamSetting = &coreConf.StreamConfig{Network: &t}
 	if len(v.NetworkSettings) == 0 {
 		return nil
 	}
-
-	t := coreConf.TransportProtocol(v.Network)
-	inbound.StreamSetting = &coreConf.StreamConfig{Network: &t}
 	switch v.Network {
 	case "tcp":
 		err := json.Unmarshal(v.NetworkSettings, &inbound.StreamSetting.TCPSettings)
@@ -273,6 +279,9 @@ func buildTrojan(config *conf.Options, nodeInfo *panel.NodeInfo, inbound *coreCo
 	}
 	t := coreConf.TransportProtocol(network)
 	inbound.StreamSetting = &coreConf.StreamConfig{Network: &t}
+	if len(v.NetworkSettings) == 0 {
+		return nil
+	}
 	switch network {
 	case "tcp":
 		err := json.Unmarshal(v.NetworkSettings, &inbound.StreamSetting.TCPSettings)
@@ -319,10 +328,8 @@ func buildShadowsocks(config *conf.Options, nodeInfo *panel.NodeInfo, inbound *c
 	}
 	settings.Users = append(settings.Users, defaultSSuser)
 	settings.NetworkList = &coreConf.NetworkList{"tcp", "udp"}
-	settings.IVCheck = true
-	if config.XrayOptions.DisableIVCheck {
-		settings.IVCheck = false
-	}
+	// Xray 26.3.27 removed the optional IVCheck switch. Replay protection
+	// is controlled by the selected protocol implementation, not this flag.
 	t := coreConf.TransportProtocol("tcp")
 	inbound.StreamSetting = &coreConf.StreamConfig{Network: &t}
 	sets, err := json.Marshal(settings)

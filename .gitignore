@@ -16,3 +16,9 @@ output/*
 .idea/*
 newV2bX.sh
 quic_singbox.sh
+/build_assets/
+/dist/
+/V2bX
+/V2bX.exe
+*.test
+*.test.exe

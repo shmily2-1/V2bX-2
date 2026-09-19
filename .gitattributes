@@ -1,0 +1,9 @@
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
+*.db binary
+*.dat binary
+# Keep unified-diff context and the unchanged upstream license text intact.
+*.patch whitespace=-blank-at-eol
+third_party/sing-box/common/windivert/assets/LICENSE.txt whitespace=-blank-at-eof

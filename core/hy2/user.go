@@ -1,13 +1,14 @@
 package hy2
 
 import (
+	"fmt"
 	"net"
 	"sync"
 
-	"github.com/InazumaV/V2bX/api/panel"
-	"github.com/InazumaV/V2bX/common/counter"
-	vCore "github.com/InazumaV/V2bX/core"
 	"github.com/apernet/hysteria/core/v2/server"
+	"github.com/shmily2-1/V2bX-2/api/panel"
+	"github.com/shmily2-1/V2bX-2/common/counter"
+	vCore "github.com/shmily2-1/V2bX-2/core"
 )
 
 var _ server.Authenticator = &V2bX{}
@@ -42,10 +43,16 @@ func (h *Hysteria2) AddUsers(p *vCore.AddUsersParams) (added int, err error) {
 }
 
 func (h *Hysteria2) DelUsers(users []panel.UserInfo, tag string, _ *panel.NodeInfo) error {
+	h.nodesMu.RLock()
+	n, exists := h.Hy2nodes[tag]
+	h.nodesMu.RUnlock()
+	if !exists {
+		return fmt.Errorf("node %q not found", tag)
+	}
 	var wg sync.WaitGroup
 	for _, user := range users {
 		wg.Add(1)
-		if v, ok := h.Hy2nodes[tag].TrafficLogger.(*HookServer).Counter.Load(tag); ok {
+		if v, ok := n.TrafficLogger.(*HookServer).Counter.Load(tag); ok {
 			c := v.(*counter.TrafficCounter)
 			c.Delete(user.Uuid)
 		}
@@ -61,13 +68,16 @@ func (h *Hysteria2) DelUsers(users []panel.UserInfo, tag string, _ *panel.NodeIn
 }
 
 func (h *Hysteria2) GetUserTrafficSlice(tag string, reset bool) ([]panel.UserTraffic, error) {
+	h.nodesMu.RLock()
+	n, exists := h.Hy2nodes[tag]
+	h.nodesMu.RUnlock()
+	if !exists {
+		return nil, nil
+	}
 	trafficSlice := make([]panel.UserTraffic, 0)
 	h.Auth.mutex.RLock()
 	defer h.Auth.mutex.RUnlock()
-	if _, ok := h.Hy2nodes[tag]; !ok {
-		return nil, nil
-	}
-	hook := h.Hy2nodes[tag].TrafficLogger.(*HookServer)
+	hook := n.TrafficLogger.(*HookServer)
 	if v, ok := hook.Counter.Load(tag); ok {
 		c := v.(*counter.TrafficCounter)
 		c.Counters.Range(func(key, value interface{}) bool {

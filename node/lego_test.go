@@ -1,3 +1,6 @@
+//go:build integration
+
+// These legacy tests contact real ACME/DNS services. Never run them in CI.
 package node
 
 import (
@@ -5,7 +8,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/InazumaV/V2bX/conf"
+	"github.com/shmily2-1/V2bX-2/conf"
 )
 
 var l *Lego

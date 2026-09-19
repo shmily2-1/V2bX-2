@@ -2,4 +2,4 @@
 
 package imports
 
-import _ "github.com/InazumaV/V2bX/core/sing"
+import _ "github.com/shmily2-1/V2bX-2/core/sing"
