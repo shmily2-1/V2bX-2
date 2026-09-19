@@ -56,6 +56,17 @@ class ProvisionTests(unittest.TestCase):
                      'ApiKey': 'test-private&secret', 'NodeID': 1, 'NodeType': 'vless', 'CertConfig': {'CertMode': 'none'}}
         self.document = {'Cores': [{'Type': 'sing'}], 'Nodes': [self.node]}
 
+    def test_edit_http_requires_explicit_confirmation(self):
+        with patch.object(p.cfg, 'ask', return_value='INSECURE-HTTP') as ask:
+            self.assertTrue(p.confirm_http_panel(self.document, interactive=True))
+            ask.assert_called_once()
+        with patch.object(p.cfg, 'ask') as ask:
+            self.assertFalse(p.confirm_http_panel(self.document))
+            self.assertTrue(p.confirm_http_panel(self.document, allowed=True))
+            ask.assert_not_called()
+        with patch.object(p.cfg, 'ask', return_value='cancel'):
+            self.assertFalse(p.confirm_http_panel(self.document, interactive=True))
+
     def test_real_panel_query_and_users(self):
         checks = p.preflight(self.document, allow_insecure_panel=True)
         self.assertEqual(checks[0]['port'], 443)

@@ -76,7 +76,7 @@ edit() {
   if [[ -n $root ]]; then
     python3 "$state/configure.py" --config "$config" --root "$root" --edit "$editor"
   else
-    python3 "$state/provision.py" --config "$config" --edit "$editor"
+    python3 "$state/provision.py" --config "$config" --edit "$editor" "$@"
   fi
 }
 update() {
@@ -152,7 +152,7 @@ dispatch() {
     install|update|update_shell) update "$@" ;;
     start|stop|restart|enable|disable) control "$command" ;;
     status) status ;;
-    config) edit ;; generate) generate "$@" ;; uninstall) uninstall ;;
+    config) edit "$@" ;; generate) generate "$@" ;; uninstall) uninstall ;;
     bbr|open-ports) root_only; host_only; python3 "$state/system-tools.py" "$command" ;;
     log) host_only; journalctl -u V2bX.service -e --no-pager -f ;;
     version|x25519) find_binary; "$binary" "$command" "$@" ;;

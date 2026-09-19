@@ -1,8 +1,10 @@
-# v0.1.0-core-upgrade.5：在线配置 / 自动证书 / 完整菜单
+# v0.1.0-core-upgrade.6：在线配置 / 自动证书 / 完整菜单
 
 这是 prerelease / 验收版。保留.2三内核版本与Hysteria2端口跳跃：Xray26.3.27、sing-box1.14.1兼容层、Hysteria2 core/extras2.12.3。
 
 ## 本次变化
+
+- 菜单0编辑已有HTTP面板配置时也会显式确认传输风险；支持config命令传递在线参数，非交互仍需--allow-insecure-panel。
 
 - 修复Debian12/nft1.0.6对OUTPUT钩子不接受dstnat别名的问题，改用等价数值优先级-100；保留IPv4/IPv6及原子回滚。新增Debian12容器中的真实QUIC跳跃验收。
 - 服务退出后保留本次InvocationID，以正确显示脱敏失败日志。
@@ -20,7 +22,7 @@
 以root在Linux amd64/arm64 + systemd执行：
 
 ```bash
-wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/v0.1.0-core-upgrade.5/install.sh && bash install.sh
+wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/v0.1.0-core-upgrade.6/install.sh && bash install.sh
 v2bx generate
 ```
 

@@ -5,7 +5,7 @@ umask 022
 
 repo=shmily2-1/V2bX-2
 # Pin an acceptance release; GitHub /latest excludes prereleases.
-version=v0.1.0-core-upgrade.5
+version=v0.1.0-core-upgrade.6
 install_dir=
 destdir=
 with_systemd=0
@@ -27,7 +27,7 @@ Usage: bash install.sh [v<release-version>] [options]
   --destdir DIR        Stage into an isolated root, without root or host service changes
                       (packaging/tests only; incompatible with --install-deps)
   -h, --help           Show this help
-Default release: v0.1.0-core-upgrade.5 (prerelease / acceptance testing)
+Default release: v0.1.0-core-upgrade.6 (prerelease / acceptance testing)
 Never changes existing configuration, enables services, or starts/restarts nodes.
 USAGE
 }

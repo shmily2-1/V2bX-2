@@ -359,6 +359,14 @@ def wizard():
             return {'Log': {'Level': 'info'}, 'Cores': list(cores.values()), 'Nodes': nodes}, insecure_panel
 
 
+def confirm_http_panel(document, allowed=False, interactive=False):
+    if allowed or not any(node.get('ApiHost', '').startswith('http://') for node in document.get('Nodes', [])):
+        return allowed
+    if interactive:
+        return cfg.ask('HTTP面板会明文传输密钥，输入 INSECURE-HTTP 继续', '') == 'INSECURE-HTTP'
+    return False
+
+
 def main():
     parser = argparse.ArgumentParser(description='V2bX-2在线配置与上线验证')
     parser.add_argument('--config', default='/etc/V2bX/config.json')
@@ -404,7 +412,9 @@ def main():
                 document = cfg.read_document(draft)
         else:
             document, wizard_insecure = wizard()
-        checks = preflight(document, args.public_ip, args.allow_empty, args.allow_insecure_panel or wizard_insecure)
+        allow_http = confirm_http_panel(document, args.allow_insecure_panel or wizard_insecure,
+                                        not (args.yes or args.check_only))
+        checks = preflight(document, args.public_ip, args.allow_empty, allow_http)
         if args.check_only:
             print('预检完成；未写入配置、申请证书或操作服务。')
             return
