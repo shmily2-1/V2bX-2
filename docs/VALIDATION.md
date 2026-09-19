@@ -18,6 +18,10 @@
 | 失败回收 | 两套内核配置错误后 UDP 端口可重新绑定；同 tag 重建；关闭后拒绝再新增监听 |
 | Xboard 补丁 | 基于 `4f48e61a2cbc6db5338872b6bdb45ef954ec1256` 的干净源码 `git apply --check` + 应用成功；PHP 8.2.20 语法检查；PHPUnit 11.5.27：6 tests、19 assertions 通过 |
 | 构建矩阵 | Linux amd64、Linux arm64、Windows amd64、macOS arm64 四种产物构建通过 |
+| 原项目兼容安装器 | Bash 语法、ShellCheck、Python 编译检查通过；核心安装器 26 项、bootstrap/菜单/配置向导 19 项离线隔离测试通过 |
+| GitHub Actions / Release | 提交 `6f2034c` 的 main 和标签工作流均成功；installer、Go 测试、nftables/iptables 端口跳跃、四平台构建及 prerelease 发布全部成功 |
+| 真实 Release 隔离安装 | `v0.1.0-core-upgrade.2` 的 `install.sh` 与 Linux amd64 ZIP SHA256 通过；ZIP 含 management bundle 与全部运行时资源；真实二进制报告 Xray 26.3.27、sing-box 1.14.1、Hysteria2 2.12.3、Go 1.27.1 |
+| 更新保护验收 | 在原生 Linux 临时根重复执行固定标签安装，既有 `config.json`、systemd unit、自定义 `route.json` 字节不变；旧二进制生成备份；隔离菜单拒绝宿主服务/日志操作，未发现旧仓库远程安装 URL |
 | Git 检查 | 第一方新增内容常见密钥格式扫描无命中；`git diff --cached --check` 通过；未更改第三方原许可证格式 |
 
 PHP 测试使用与 Xboard lock 一致的 Laravel 12.54.1 和 PHPUnit 11.5.27，独立安装到测试目录，禁用 Composer 插件/脚本；不启动 Laravel 应用、不运行迁移。该最小依赖环境不是部署用面板，Composer audit 的旧依赖提示也不代表本次完成了 Xboard 全依赖安全审计。
@@ -27,6 +31,6 @@ PHP 测试使用与 Xboard lock 一致的 Laravel 12.54.1 和 PHPUnit 11.5.27，
 - Linux namespace 测试使用本机 loopback，验证实际内核、UDP NAT 和 QUIC 迁移；不证明公网路径、云安全组、外部 NAT、真实订阅客户端已经配置正确。
 - 未对生产 Xboard 应用补丁，未验证生产用户分配、面板计费入账或公网 TLS/REALITY。
 - macOS/ARM 构建是交叉编译，不是这些设备上的运行验收。端口跳跃只支持 Linux。
-- Dockerfile/CI 工作流已更新，但不能把本地结果当成 GitHub Actions 或 Docker 运行已经成功。
+- GitHub Actions 与 prerelease 发布已经成功；Docker 镜像工作流仍未在本轮人工触发，不能据此声称 Docker 镜像已验收。
 - 未完成长期并发、性能/限速精度和所有协议/客户端组合的验收；正常退出清理不覆盖 `kill -9` 和防火墙外部重载。
-- 本轮仅发布源码和本地验收包，不自动部署节点，也不自动发布 stable Release。
+- 已发布 `v0.1.0-core-upgrade.2` prerelease / 验收版，但没有发布 stable Release，也没有自动部署任何节点。

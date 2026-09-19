@@ -36,7 +36,7 @@ bash install.sh v0.1.0-core-upgrade.2 --non-interactive
 
 ## 首次配置
 
-新装默认程序 `/usr/local/bin/V2bX`。兼容原项目的 bootstrap 还安装：
+兼容原项目菜单的一键新装默认程序为 `/usr/local/V2bX/V2bX`；已有 `/usr/local/bin/V2bX` 或现有服务路径会被识别并保留。bootstrap 还安装：
 
 - `/etc/systemd/system/V2bX.service`（只有无现有本地/运行时/发行版服务时才创建）；
 - `/etc/V2bX/config.json.example`（权限 0600，Hysteria2 + Xboard 示例，不覆盖已有同名文件）；
@@ -99,4 +99,4 @@ python3 scripts/test-install.py
 python3 scripts/test-bootstrap.py
 ```
 
-离线测试使用伪下载和伪服务查询，但 ZIP 解包、SHA256、备份、软链接和原子替换使用真实系统工具。`--destdir /tmp/独立目录`（路径请用 ASCII）用于打包/验收，可无 root 执行；所有文件放入指定隔离根，不调用宿主 systemctl，不允许 `--install-deps`。这一选项不是生产配置目录选项。
+离线测试使用伪下载和伪服务查询，但 ZIP 解包、SHA256、备份、软链接和原子替换使用真实系统工具。`--destdir /tmp/v2bx-staging` 用于打包/验收，可无 root 执行；所有文件放入指定隔离根，不调用宿主 systemctl，不允许 `--install-deps`。请使用原生 Linux 文件系统；WSL 的 `/mnt/c`、`/mnt/d` 等 DrvFS 挂载可能不具备相同的 Linux 符号链接语义。这一选项不是生产配置目录选项。

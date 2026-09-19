@@ -70,7 +70,7 @@ wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/v0.1.0-core-upgrade.2
 ```
 
 - 从本仓库 Release 下载对应架构，校验 SHA256，原子替换程序并备份旧文件。下载/校验失败不会安装。
-- 新装默认 `/usr/local/bin/V2bX`；更新优先使用现有 `V2bX.service` 的实际程序路径，兼容旧 `/usr/local/V2bX/V2bX` 和符号链接。路径冲突会停止，不会假装更新成功。
+- 兼容菜单的一键新装默认程序路径为 `/usr/local/V2bX/V2bX`；更新优先使用现有 `V2bX.service` 的实际程序路径，并兼容已有 `/usr/local/bin/V2bX` 和符号链接。路径冲突会停止，不会假装更新成功。
 - 安装器会先执行适配后的 `scripts/install.sh`，仅在缺少工具时安装必要系统包，不做整机升级；**不安装/启用防火墙服务，不改端口规则**。
 - 首次安装会把兼容原项目的 `V2bX` 管理命令装到 `/usr/bin/V2bX`，并创建 `v2bx` 别名，提供 `start|stop|restart|status|enable|disable|log|update|generate|config|version|x25519|uninstall|ports` 等菜单/命令。**不会覆盖配置/证书，不自动启动、重启或设置开机启动。**
 
