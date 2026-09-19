@@ -51,24 +51,36 @@ go build -trimpath -tags "$TAGS" -ldflags '-s -w' -o V2bX .
 
 ## 安装 / 更新
 
-### Linux 一键安装（root 执行）
+### Linux 一键安装（兼容原 V2bX 命令）
 
-支持 **amd64 / arm64**，常见 Debian / Ubuntu / RHEL 系 systemd 服务器。先备份现有配置并阅读 [升级说明](docs/UPGRADE.md)。当前固定安装 `v0.1.0-core-upgrade.1` **验收版 / prerelease**，不是未经核实的「最新版」。需要能连接 GitHub，并预装 Bash、curl 和 CA 证书。
+支持 **amd64 / arm64**，目标是常见 Debian / Ubuntu / RHEL 系 **systemd** 服务器；一键入口不会在 OpenRC、SysVinit、runit 或未运行 systemd 的容器中继续安装。先备份现有配置并阅读 [升级说明](docs/UPGRADE.md)。当前固定安装 `v0.1.0-core-upgrade.2` **验收版 / prerelease**，不是未经核实的「最新版」。
+
+与原项目命令格式一致：
 
 ```bash
-(set -e; f=$(mktemp); trap 'rm -f -- "$f"' EXIT; curl -fsSL --retry 3 --proto '=https' --proto-redir '=https' https://raw.githubusercontent.com/shmily2-1/V2bX-2/v0.1.0-core-upgrade.1/scripts/install.sh -o "$f"; bash "$f" --install-deps --with-systemd)
+wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/main/install.sh && bash install.sh
+```
+
+这里只兼容原项目“一条 `wget` + `bash`”的调用形状；脚本地址、版本解析、下载源和更新逻辑全部属于本仓库实现，不会回调或覆盖回 `wyx2685/V2bX-script`。
+
+生产环境建议固定已验收标签，避免 `main` 变化：
+
+```bash
+wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/v0.1.0-core-upgrade.2/install.sh && bash install.sh
 ```
 
 - 从本仓库 Release 下载对应架构，校验 SHA256，原子替换程序并备份旧文件。下载/校验失败不会安装。
 - 新装默认 `/usr/local/bin/V2bX`；更新优先使用现有 `V2bX.service` 的实际程序路径，兼容旧 `/usr/local/V2bX/V2bX` 和符号链接。路径冲突会停止，不会假装更新成功。
-- `--install-deps` 仅在缺少工具时安装必要系统包，不做整机升级；**不安装/启用防火墙服务，不改端口规则**。
-- `--with-systemd` 仅在不存在服务时创建 `V2bX.service`，提供 `/etc/V2bX/config.json.example`。**不覆盖配置/证书/已有服务，不自动启动、重启或设置开机启动。**
+- 安装器会先执行适配后的 `scripts/install.sh`，仅在缺少工具时安装必要系统包，不做整机升级；**不安装/启用防火墙服务，不改端口规则**。
+- 首次安装会把兼容原项目的 `V2bX` 管理命令装到 `/usr/bin/V2bX`，并创建 `v2bx` 别名，提供 `start|stop|restart|status|enable|disable|log|update|generate|config|version|x25519|uninstall|ports` 等菜单/命令。**不会覆盖配置/证书，不自动启动、重启或设置开机启动。**
 
-首次安装后，参考示例填入面板地址、密钥、节点 ID 和证书路径，保存为 `/etc/V2bX/config.json`，验证配置后由你执行 `systemctl enable --now V2bX`。老节点更新后需自行安排 `systemctl restart V2bX` 才生效。
+首次安装后执行 `V2bX generate` 生成配置，或编辑 `/etc/V2bX/config.json`，填好面板地址、密钥、节点 ID 和证书信息。确认配置正确后，在 **systemd** 主机执行 `V2bX enable && V2bX start`。老节点更新后需自行安排 `V2bX restart`。
 
-非 systemd 环境去掉 `--with-systemd`；仅安装程序可同时去掉 `--install-deps` 并自行准备依赖。指定版本、升级/回滚步骤、服务和配置说明见 [安装指南](docs/INSTALL.md)。**Hysteria2 跳跃仍须配套 Xboard 补丁及 UDP 放行，安装脚本不会代改面板。**
+OpenRC、SysVinit、runit 或未运行 systemd 的容器不在一键入口支持范围内；脚本会在下载前拒绝继续，不会自动改造成其它 init 系统。需要二进制-only 部署时请先审查 Release 包并手动托管，不要执行依赖 `systemctl` 的管理命令。指定版本、升级/回滚步骤、服务和配置说明见 [安装指南](docs/INSTALL.md)。**Hysteria2 跳跃仍须配套 Xboard 补丁及 UDP 放行，安装脚本不会代改面板。**
 
 ## 验证与维护
+
+下面的命令针对源码仓库 checkout；Release ZIP 只包含运行所需的资料和管理 bundle，不保证包含完整测试脚本目录。
 
 ```bash
 GOEXPERIMENT=jsonv2 go test -tags "$TAGS" -count=1 -timeout 180s ./...

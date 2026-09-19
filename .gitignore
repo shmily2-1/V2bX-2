@@ -22,3 +22,5 @@ quic_singbox.sh
 /V2bX.exe
 *.test
 *.test.exe
+__pycache__/
+*.pyc

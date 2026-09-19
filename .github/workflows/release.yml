@@ -25,8 +25,12 @@ jobs:
       - name: Validate installer and offline safety regressions
         run: |
           bash -n scripts/install.sh
+          bash -n install.sh V2bX.sh initconfig.sh
           shellcheck scripts/install.sh
+          shellcheck install.sh V2bX.sh initconfig.sh
+          python3 -m py_compile configure.py
           python3 scripts/test-install.py
+          python3 scripts/test-bootstrap.py
 
   test:
     runs-on: ubuntu-latest
@@ -85,7 +89,11 @@ jobs:
           cp README.md LICENSE dist/
           cp -r docs dist/
           cp -r example dist/
-          cp scripts/install.sh dist/
+          mkdir -p dist/management
+          cp install.sh V2bX.sh initconfig.sh configure.py dist/
+          cp V2bX.sh initconfig.sh configure.py dist/management/
+          cp scripts/install.sh dist/management/install.sh
+          cp install.sh dist/management/bootstrap.sh
           mkdir -p dist/licenses
           cp third_party/sing-box/LICENSE dist/licenses/sing-box-LICENSE
           printf 'Repository: https://github.com/%s\nCommit: %s\nSource: https://github.com/%s/archive/%s.tar.gz\n' \
@@ -120,7 +128,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
           VERSION: ${{ github.ref_name }}
         run: |
-          cp scripts/install.sh artifacts/install.sh
-          (cd artifacts && sha256sum install.sh > install.sh.sha256)
+          cp install.sh V2bX.sh initconfig.sh configure.py artifacts/
+          (cd artifacts && sha256sum install.sh > install.sh.sha256 && sha256sum V2bX.sh > V2bX.sh.sha256 && sha256sum initconfig.sh > initconfig.sh.sha256 && sha256sum configure.py > configure.py.sha256)
           gh release create "$VERSION" artifacts/* --verify-tag --title "$VERSION" \
             --notes-file docs/RELEASE-NOTES.md --prerelease
