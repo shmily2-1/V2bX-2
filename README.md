@@ -51,17 +51,22 @@ go build -trimpath -tags "$TAGS" -ldflags '-s -w' -o V2bX .
 
 ## 安装 / 更新
 
-1. 从本仓库 Releases 或已通过 CI 的 Actions artifacts 下载对应平台包。
-2. 校验同目录 `.zip.sha256`，备份原二进制、配置及 systemd 文件。
-3. 检查 `docs/UPGRADE.md` 的兼容性变化，再在测试节点运行。
+### Linux 一键安装（root 执行）
 
-Linux 可下载并人工检查本仓库 `scripts/install.sh` 后执行：
+支持 **amd64 / arm64**，常见 Debian / Ubuntu / RHEL 系 systemd 服务器。先备份现有配置并阅读 [升级说明](docs/UPGRADE.md)。当前固定安装 `v0.1.0-core-upgrade.1` **验收版 / prerelease**，不是未经核实的「最新版」。需要能连接 GitHub，并预装 Bash、curl 和 CA 证书。
 
 ```bash
-sudo bash install.sh v0.1.0-core-upgrade.1
+(set -e; f=$(mktemp); trap 'rm -f -- "$f"' EXIT; curl -fsSL --retry 3 --proto '=https' --proto-redir '=https' https://raw.githubusercontent.com/shmily2-1/V2bX-2/v0.1.0-core-upgrade.1/scripts/install.sh -o "$f"; bash "$f" --install-deps --with-systemd)
 ```
 
-该示例版本只有在对应 Release 发布后才可安装。脚本只替换 `/usr/local/bin/V2bX`，备份该位置的原二进制，**不会改配置、申请证书、创建服务或自动重启节点**。旧安装器可能使用 `/usr/local/V2bX/V2bX`，请先检查实际 `ExecStart`。
+- 从本仓库 Release 下载对应架构，校验 SHA256，原子替换程序并备份旧文件。下载/校验失败不会安装。
+- 新装默认 `/usr/local/bin/V2bX`；更新优先使用现有 `V2bX.service` 的实际程序路径，兼容旧 `/usr/local/V2bX/V2bX` 和符号链接。路径冲突会停止，不会假装更新成功。
+- `--install-deps` 仅在缺少工具时安装必要系统包，不做整机升级；**不安装/启用防火墙服务，不改端口规则**。
+- `--with-systemd` 仅在不存在服务时创建 `V2bX.service`，提供 `/etc/V2bX/config.json.example`。**不覆盖配置/证书/已有服务，不自动启动、重启或设置开机启动。**
+
+首次安装后，参考示例填入面板地址、密钥、节点 ID 和证书路径，保存为 `/etc/V2bX/config.json`，验证配置后由你执行 `systemctl enable --now V2bX`。老节点更新后需自行安排 `systemctl restart V2bX` 才生效。
+
+非 systemd 环境去掉 `--with-systemd`；仅安装程序可同时去掉 `--install-deps` 并自行准备依赖。指定版本、升级/回滚步骤、服务和配置说明见 [安装指南](docs/INSTALL.md)。**Hysteria2 跳跃仍须配套 Xboard 补丁及 UDP 放行，安装脚本不会代改面板。**
 
 ## 验证与维护
 

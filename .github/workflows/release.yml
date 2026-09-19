@@ -16,6 +16,18 @@ env:
   BUILD_TAGS: sing xray hysteria2 with_quic with_grpc with_utls with_wireguard with_acme with_gvisor
 
 jobs:
+  installer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install installer test tools
+        run: sudo apt-get update && sudo apt-get install -y shellcheck unzip
+      - name: Validate installer and offline safety regressions
+        run: |
+          bash -n scripts/install.sh
+          shellcheck scripts/install.sh
+          python3 scripts/test-install.py
+
   test:
     runs-on: ubuntu-latest
     steps:
@@ -44,7 +56,7 @@ jobs:
         run: bash scripts/test-porthop-netns.sh "${{ matrix.backend }}"
 
   build:
-    needs: [test, porthop-linux]
+    needs: [test, porthop-linux, installer]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -73,6 +85,11 @@ jobs:
           cp README.md LICENSE dist/
           cp -r docs dist/
           cp -r example dist/
+          cp scripts/install.sh dist/
+          mkdir -p dist/licenses
+          cp third_party/sing-box/LICENSE dist/licenses/sing-box-LICENSE
+          printf 'Repository: https://github.com/%s\nCommit: %s\nSource: https://github.com/%s/archive/%s.tar.gz\n' \
+            "$GITHUB_REPOSITORY" "$GITHUB_SHA" "$GITHUB_REPOSITORY" "$GITHUB_SHA" > dist/SOURCE.txt
           cd dist
           zip -q -r "../V2bX-${{ matrix.name }}.zip" .
           cd ..
@@ -91,6 +108,7 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           pattern: V2bX-*
@@ -101,4 +119,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           VERSION: ${{ github.ref_name }}
-        run: gh release create "$VERSION" artifacts/* --title "$VERSION" --generate-notes --prerelease
+        run: |
+          cp scripts/install.sh artifacts/install.sh
+          (cd artifacts && sha256sum install.sh > install.sh.sha256)
+          gh release create "$VERSION" artifacts/* --verify-tag --title "$VERSION" \
+            --notes-file docs/RELEASE-NOTES.md --prerelease
