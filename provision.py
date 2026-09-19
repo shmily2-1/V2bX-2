@@ -185,7 +185,8 @@ def wait_healthy(document, checks, timeout):
     while time.monotonic() < deadline:
         values = run('systemctl', 'show', SERVICE, '-p', 'ActiveState', '-p', 'MainPID', '-p', 'InvocationID').stdout
         state = dict(line.split('=', 1) for line in values.splitlines() if '=' in line)
-        invocation, pid = state.get('InvocationID', ''), state.get('MainPID', '0')
+        invocation = state.get('InvocationID') or invocation
+        pid = state.get('MainPID', '0')
         if state.get('ActiveState') in ('failed', 'inactive'):
             raise ProvisionError('服务提前退出。脱敏日志：\n' + safe_logs(document, invocation))
         if state.get('ActiveState') == 'active' and pid == '0':

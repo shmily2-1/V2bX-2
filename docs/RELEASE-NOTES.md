@@ -1,8 +1,11 @@
-# v0.1.0-core-upgrade.4：在线配置 / 自动证书 / 完整菜单
+# v0.1.0-core-upgrade.5：在线配置 / 自动证书 / 完整菜单
 
 这是 prerelease / 验收版。保留.2三内核版本与Hysteria2端口跳跃：Xray26.3.27、sing-box1.14.1兼容层、Hysteria2 core/extras2.12.3。
 
 ## 本次变化
+
+- 修复Debian12/nft1.0.6对OUTPUT钩子不接受dstnat别名的问题，改用等价数值优先级-100；保留IPv4/IPv6及原子回滚。新增Debian12容器中的真实QUIC跳跃验收。
+- 服务退出后保留本次InvocationID，以正确显示脱敏失败日志。
 
 - 菜单15不再仅生成JSON：实际读取Xboard节点/授权用户，识别协议/监听端口，预检域名/证书，确认后停止旧服务、备份写入、通过内置lego申请Let's Encrypt并启动/设置自启，检查实际PID/监听/证书。失败回滚，避免反复重启导致CA限流。
 - 菜单0私有副本编辑后走在线预检；--offline和--root保留离线、不操作宿主服务的边界。
@@ -17,7 +20,7 @@
 以root在Linux amd64/arm64 + systemd执行：
 
 ```bash
-wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/v0.1.0-core-upgrade.4/install.sh && bash install.sh
+wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/v0.1.0-core-upgrade.5/install.sh && bash install.sh
 v2bx generate
 ```
 

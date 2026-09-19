@@ -112,7 +112,7 @@ else: print("{ path=" + service + " ; argv[]=" + service + " server ; }")
         self.assertEqual(binary.stat().st_mode & 0o777, 0o755)
         self.assertFalse((self.root / "etc").exists())
         self.assertTrue(all(c[0] == "curl" for c in self.calls()))
-        self.assertIn("/v0.1.0-core-upgrade.4/", self.calls()[0][1])
+        self.assertIn("/v0.1.0-core-upgrade.5/", self.calls()[0][1])
         self.assertFalse((self.root / "MUST_NOT_EXTRACT").exists())
 
     def test_systemd_staging(self):

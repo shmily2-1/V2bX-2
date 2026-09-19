@@ -62,8 +62,35 @@ jobs:
       - name: Real maintenance firewall apply and rollback (disposable network namespace)
         run: sudo env V2BX_SYSTEM_TOOLS_NETNS=1 unshare --net python3 scripts/test-system-tools-netns.py
 
+  porthop-debian12:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build test binaries for old nftables acceptance
+        run: |
+          mkdir -p netns-tests
+          go test -c -tags "$BUILD_TAGS" -o netns-tests/core.test ./core
+          go test -c -o netns-tests/firewall.test ./common/porthop
+      - name: Debian 12 nft 1.0.6 real NAT and QUIC hopping
+        run: |
+          docker run --rm --cap-add NET_ADMIN --cap-add SYS_ADMIN --security-opt seccomp=unconfined \
+            -v "$PWD:/src:ro" -w /src debian:12 bash -eu -c '
+              apt-get update -qq && apt-get install -y -qq nftables iproute2 util-linux python3
+              nft --version
+              unshare --net bash -eu -c "
+                ip link set lo up
+                export V2BX_TEST_NETNS=1 V2BX_FIREWALL_BACKEND=nftables
+                ./netns-tests/firewall.test -test.run TestRedirectNetNS -test.v -test.timeout=90s
+                ./netns-tests/core.test -test.run TestPortHoppingNetNS -test.v -test.timeout=120s
+              "
+              env V2BX_SYSTEM_TOOLS_NETNS=1 unshare --net python3 scripts/test-system-tools-netns.py
+            '
+
   build:
-    needs: [test, porthop-linux, installer]
+    needs: [test, porthop-linux, porthop-debian12, installer]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

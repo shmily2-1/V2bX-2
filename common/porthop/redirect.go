@@ -134,7 +134,9 @@ func setupNFT(r runner, id string, addr netip.Addr, port int, ranges []Range) (i
 	for _, family := range families(addr) {
 		fmt.Fprintf(&script, "create table %s %s\n", family, name)
 		for _, chain := range []string{"prerouting", "output"} {
-			fmt.Fprintf(&script, "add chain %s %s %s { type nat hook %s priority dstnat; policy accept; }\n", family, name, chain, chain)
+			// nft 1.0.6 (Debian 12) rejects the dstnat alias on OUTPUT.
+			// Numeric NF_IP_PRI_NAT_DST works for both hooks and IPv4/IPv6.
+			fmt.Fprintf(&script, "add chain %s %s %s { type nat hook %s priority -100; policy accept; }\n", family, name, chain, chain)
 			match := "fib daddr type local"
 			target := fmt.Sprintf("redirect to :%d", port)
 			if !addr.IsUnspecified() {

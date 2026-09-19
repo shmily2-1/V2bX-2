@@ -100,6 +100,9 @@ func TestNFTAtomicDualStackAndCleanup(t *testing.T) {
 	}
 	text := r.text()
 	requireContains(t, text, "create table ip v2bx_hop_", "create table ip6 v2bx_hop_", "hook prerouting", "hook output", "fib daddr type local", "udp dport 20000-20004", "udp dport 20006-20010", "redirect to :20005")
+	if strings.Contains(text, "priority dstnat") || strings.Count(text, "priority -100") != 4 {
+		t.Fatal("NAT priorities must support nft 1.0.6 for both hooks and families")
+	}
 	if strings.Contains(text, "udp dport 20005") || strings.Contains(text, "not a command") {
 		t.Fatal("listen port or tag leaked into rules")
 	}

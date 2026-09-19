@@ -231,7 +231,7 @@ sys.stdout.buffer.write(zipfile.ZipFile(archive).read(member))
 
     def test_menu_update_uses_new_repo(self):
         self.run_bootstrap()
-        output = self.run_menu('update', 'v0.1.0-core-upgrade.4')
+        output = self.run_menu('update', 'v0.1.0-core-upgrade.5')
         self.assertIn('旧进程未重启', output)
         urls = [json.loads(line) for line in self.log.read_text().splitlines()]
         self.assertTrue(all('/shmily2-1/V2bX-2/' in url for url in urls))
