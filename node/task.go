@@ -68,6 +68,11 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 		}).Error("Get user list failed")
 		return nil
 	}
+	// A nil user list is an HTTP 304, not an empty authorization list.
+	// Keep the current list so a config refresh cannot revoke users by accident.
+	if newU == nil {
+		newU = c.userList
+	}
 	// get user alive
 	newA, err := c.apiClient.GetUserAlive()
 	if err != nil {
@@ -138,11 +143,7 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 			}).Panic("Add node failed")
 			return nil
 		}
-		_, err = c.server.AddUsers(&vCore.AddUsersParams{
-			Tag:      c.tag,
-			Users:    c.userList,
-			NodeInfo: newN,
-		})
+		_, err = c.addAuthorizedUsers(newN)
 		if err != nil {
 			log.WithFields(log.Fields{
 				"tag": c.tag,
@@ -159,7 +160,7 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 		}
 		if c.userReportPeriodic.Interval != newN.PushInterval &&
 			newN.PushInterval != 0 {
-			c.userReportPeriodic.Interval = newN.PullInterval
+			c.userReportPeriodic.Interval = newN.PushInterval
 			c.userReportPeriodic.Close()
 			_ = c.userReportPeriodic.Start(false)
 		}
@@ -171,10 +172,7 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 	if newA != nil {
 		c.limiter.AliveList = newA
 	}
-	// node no changed, check users
-	if len(newU) == 0 {
-		return nil
-	}
+	// node no changed, check users; a non-nil empty list revokes every user.
 	deleted, added := compareUserList(c.userList, newU)
 	if len(deleted) > 0 {
 		// have deleted users

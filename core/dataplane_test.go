@@ -91,9 +91,6 @@ func TestUpgradedCoreDataPlane(t *testing.T) {
 			if err := engine.AddNode(tag, info, opts); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := engine.AddUsers(&core.AddUsersParams{Tag: tag, NodeInfo: info, Users: users}); err != nil {
-				t.Fatal(err)
-			}
 			roundTrip := func() error {
 				var c net.Conn
 				if tc.protocol == "hysteria2" {
@@ -138,6 +135,12 @@ func TestUpgradedCoreDataPlane(t *testing.T) {
 					return fmt.Errorf("echo payload mismatch")
 				}
 				return nil
+			}
+			if err := roundTrip(); err == nil {
+				t.Fatal("empty-user node authenticated a user before panel authorization")
+			}
+			if _, err := engine.AddUsers(&core.AddUsersParams{Tag: tag, NodeInfo: info, Users: users}); err != nil {
+				t.Fatal(err)
 			}
 			if err := roundTrip(); err != nil {
 				t.Fatal("authenticated traffic:", err)

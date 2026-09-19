@@ -3,7 +3,7 @@
 ## 适用范围
 
 - Linux amd64 / arm64，使用 Bash；一键入口只支持正在运行的 systemd。OpenRC、SysVinit、runit 和未运行 systemd 的容器会在下载前被拒绝。
-- 当前默认：`v0.1.0-core-upgrade.2`，明确为验收版 / prerelease。固定标签使脚本和下载版本对应，不使用会排除 prerelease 的 GitHub `/releases/latest`。
+- 当前默认：`v0.1.0-core-upgrade.3`，明确为验收版 / prerelease。固定标签使脚本和下载版本对应，不使用会排除 prerelease 的 GitHub `/releases/latest`。
 - 从根 README 复制一键命令，以 root 执行。命令先完整下载到随机临时文件，成功后才执行，不使用 `curl | bash`。执行远程脚本前应人工查看内容。
 - 初始下载需要 curl 和 CA 证书。Debian/Ubuntu 可先运行 `apt-get update && apt-get install -y curl ca-certificates`；RHEL 系使用对应的 dnf/yum。
 - 脚本可用 `--install-deps` 补齐 curl、unzip、coreutils、util-linux 所提供的工具；不会整机升级。其它发行版自行安装依赖。
@@ -18,10 +18,10 @@ wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/main/install.sh && ba
 固定版本安装：
 
 ```bash
-wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/v0.1.0-core-upgrade.2/install.sh && bash install.sh
+wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/v0.1.0-core-upgrade.3/install.sh && bash install.sh
 ```
 
-如需把版本参数也显式写入审计记录，可在查看脚本后执行 `bash install.sh v0.1.0-core-upgrade.2`；该标签脚本默认值已经固定为同一版本。
+如需把版本参数也显式写入审计记录，可在查看脚本后执行 `bash install.sh v0.1.0-core-upgrade.3`；该标签脚本默认值已经固定为同一版本。
 
 ## 可审核的分步安装
 
@@ -29,7 +29,7 @@ wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/v0.1.0-core-upgrade.2
 
 ```bash
 less install.sh
-bash install.sh v0.1.0-core-upgrade.2 --non-interactive
+bash install.sh v0.1.0-core-upgrade.3 --non-interactive
 ```
 
 下载文件名 `V2bX-linux-amd64.zip` 或 `V2bX-linux-arm64.zip`，使用同一 Release 的 `.zip.sha256` 校验。只从 HTTPS GitHub 下载，不回退到未知镜像。SHA256 能检测损坏/不匹配，不是独立于 GitHub 仓库的签名。标签、脚本和 Release 都属于同一信任边界。
@@ -44,24 +44,18 @@ bash install.sh v0.1.0-core-upgrade.2 --non-interactive
 - `/usr/local/lib/V2bX-2/`（与已校验 ZIP 同源的管理脚本和运行时资源）；
 - **不会直接生成生产 `config.json`，不会申请证书或启动节点。**
 
-仅新节点执行以下初始化，已存在配置时第一步会跳过：
+新节点运行 `v2bx generate`，输入核心、面板地址/密钥、节点ID。默认auto识别协议，读取真实面板配置及用户，再选择证书方式。HTTP-01要求域名解析正确、公网TCP80开放且不占用；节点协议可能监听UDP443，这是不同的端口/传输。
+
+输入 `DEPLOY` 后才会停止旧服务、备份/原子写入配置、申请证书、启动并默认设置自启。失败恢复原配置/服务，避免systemd反复重启触发CA限流。检查命令：
+
 
 ```bash
-test -e /etc/V2bX/config.json || install -m 0600 /etc/V2bX/config.json.example /etc/V2bX/config.json
-${EDITOR:-vi} /etc/V2bX/config.json
-```
-
-填写 `ApiHost`、`ApiKey`、`NodeID`、证书域名、证书/私钥路径。示例 `NodeType` 为 `hysteria`，面板协议版本设置为 2。其它协议按仓库配置说明调整 `Cores` 和 `Nodes`，不要直接使用示例占位值启动。
-
-已确认面板配置、证书、监听端口和客户端兼容性后：
-
-```bash
-systemctl enable --now V2bX
-systemctl status V2bX --no-pager
+v2bx status
 journalctl -u V2bX -n 100 --no-pager
+v2bx
 ```
 
-创建的服务以 root 运行，便于端口绑定和跳跃 NAT 管理；不自动对现有非 root 服务提权。`Restart=on-failure` 不替代配置正确性或真实数据面验收。
+离线生成使用 `v2bx generate --offline`。高级受保护文件部署、限制和菜单11/16说明见[在线配置文档](ONLINE-PROVISION.md)。创建服务以root运行以支持端口/NAT；不修改既有自定义服务权限。不把服务active等同于公网客户端已认证成功。
 
 ### 非 systemd 环境
 
@@ -75,7 +69,7 @@ OpenRC、SysVinit、runit 和未运行 systemd 的容器不在本一键入口支
 4. **运行中的老进程不会自动切换**。在维护窗口人工执行 `systemctl restart V2bX`，检查日志、用户、流量及真实客户端。
 5. 若失败，先停止节点，将明确选定的备份复制为同目录临时文件，再原子替换实际 `ExecStart` 程序，恢复必要配置后启动。不要盲目选择通配符匹配出的「最后一个」备份。
 
-仅装程序：`sudo bash install.sh v0.1.0-core-upgrade.2`。另一个版本只有其 Release 和对应架构资产实际存在时才可指定。`V2bX update` 使用本地已校验适配安装器，不会运行 wyx2685 原版安装器；以后继续使用本仓库的一键命令或本地管理命令更新。
+仅装程序：`sudo bash install.sh v0.1.0-core-upgrade.3`。另一个版本只有其 Release 和对应架构资产实际存在时才可指定。`V2bX update` 使用本地已校验适配安装器，不会运行 wyx2685 原版安装器；以后继续使用本仓库的一键命令或本地管理命令更新。
 
 ## Hysteria2 端口跳跃
 

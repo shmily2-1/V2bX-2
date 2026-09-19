@@ -53,7 +53,7 @@ go build -trimpath -tags "$TAGS" -ldflags '-s -w' -o V2bX .
 
 ### Linux 一键安装（兼容原 V2bX 命令）
 
-支持 **amd64 / arm64**，目标是常见 Debian / Ubuntu / RHEL 系 **systemd** 服务器；一键入口不会在 OpenRC、SysVinit、runit 或未运行 systemd 的容器中继续安装。先备份现有配置并阅读 [升级说明](docs/UPGRADE.md)。当前固定安装 `v0.1.0-core-upgrade.2` **验收版 / prerelease**，不是未经核实的「最新版」。
+支持 **amd64 / arm64**，目标是常见 Debian / Ubuntu / RHEL 系 **systemd** 服务器；一键入口不会在 OpenRC、SysVinit、runit 或未运行 systemd 的容器中继续安装。先备份现有配置并阅读 [升级说明](docs/UPGRADE.md)。当前固定安装 `v0.1.0-core-upgrade.3` **验收版 / prerelease**，不是未经核实的「最新版」。
 
 与原项目命令格式一致：
 
@@ -66,7 +66,7 @@ wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/main/install.sh && ba
 生产环境建议固定已验收标签，避免 `main` 变化：
 
 ```bash
-wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/v0.1.0-core-upgrade.2/install.sh && bash install.sh
+wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/v0.1.0-core-upgrade.3/install.sh && bash install.sh
 ```
 
 - 从本仓库 Release 下载对应架构，校验 SHA256，原子替换程序并备份旧文件。下载/校验失败不会安装。
@@ -74,7 +74,9 @@ wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/v0.1.0-core-upgrade.2
 - 安装器会先执行适配后的 `scripts/install.sh`，仅在缺少工具时安装必要系统包，不做整机升级；**不安装/启用防火墙服务，不改端口规则**。
 - 首次安装会把兼容原项目的 `V2bX` 管理命令装到 `/usr/bin/V2bX`，并创建 `v2bx` 别名，提供 `start|stop|restart|status|enable|disable|log|update|generate|config|version|x25519|uninstall|ports` 等菜单/命令。**不会覆盖配置/证书，不自动启动、重启或设置开机启动。**
 
-首次安装后执行 `V2bX generate` 生成配置，或编辑 `/etc/V2bX/config.json`，填好面板地址、密钥、节点 ID 和证书信息。确认配置正确后，在 **systemd** 主机执行 `V2bX enable && V2bX start`。老节点更新后需自行安排 `V2bX restart`。
+首次安装后执行 `v2bx generate`（菜单15）：**真实连接面板读取协议、监听端口和授权用户 → 校验域名与TCP80 → 内置lego申请证书 → 备份配置 → 启动/自启 → 检查PID、监听与证书**。菜单0编辑私有副本后走同样的在线预检/回滚流程。默认HTTP-01；也可选择DNS-01/已有证书；REALITY/无TLS不申请证书。面板HTTP须明确确认密钥明文风险。失败停止新节点并恢复旧配置；不会伪造用户或流量。
+
+只要离线生成配置：`v2bx generate --offline`。`--root`始终离线，禁止宿主服务操作。菜单编号与原项目一致，8日志、9自启、10取消自启、11BBR、16全端口放行。11和16均是显式危险操作，默认不运行；BBR只使用发行版软件源且不自动重启，全开放保留NAT并提供120秒自动撤回。详见[在线配置及系统维护](docs/ONLINE-PROVISION.md)。
 
 OpenRC、SysVinit、runit 或未运行 systemd 的容器不在一键入口支持范围内；脚本会在下载前拒绝继续，不会自动改造成其它 init 系统。需要二进制-only 部署时请先审查 Release 包并手动托管，不要执行依赖 `systemctl` 的管理命令。指定版本、升级/回滚步骤、服务和配置说明见 [安装指南](docs/INSTALL.md)。**Hysteria2 跳跃仍须配套 Xboard 补丁及 UDP 放行，安装脚本不会代改面板。**
 

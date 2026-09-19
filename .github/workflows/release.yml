@@ -28,9 +28,10 @@ jobs:
           bash -n install.sh V2bX.sh initconfig.sh
           shellcheck scripts/install.sh
           shellcheck install.sh V2bX.sh initconfig.sh
-          python3 -m py_compile configure.py
+          python3 -m py_compile configure.py provision.py system-tools.py
           python3 scripts/test-install.py
           python3 scripts/test-bootstrap.py
+          python3 scripts/test-provision.py
 
   test:
     runs-on: ubuntu-latest
@@ -58,6 +59,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y nftables iptables iproute2
       - name: Real UDP forwarding and QUIC port hopping (disposable network namespace)
         run: bash scripts/test-porthop-netns.sh "${{ matrix.backend }}"
+      - name: Real maintenance firewall apply and rollback (disposable network namespace)
+        run: sudo env V2BX_SYSTEM_TOOLS_NETNS=1 unshare --net python3 scripts/test-system-tools-netns.py
 
   build:
     needs: [test, porthop-linux, installer]
@@ -90,8 +93,8 @@ jobs:
           cp -r docs dist/
           cp -r example dist/
           mkdir -p dist/management
-          cp install.sh V2bX.sh initconfig.sh configure.py dist/
-          cp V2bX.sh initconfig.sh configure.py dist/management/
+          cp install.sh V2bX.sh initconfig.sh configure.py provision.py system-tools.py dist/
+          cp V2bX.sh initconfig.sh configure.py provision.py system-tools.py dist/management/
           cp scripts/install.sh dist/management/install.sh
           cp install.sh dist/management/bootstrap.sh
           mkdir -p dist/licenses
@@ -128,7 +131,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
           VERSION: ${{ github.ref_name }}
         run: |
-          cp install.sh V2bX.sh initconfig.sh configure.py artifacts/
-          (cd artifacts && sha256sum install.sh > install.sh.sha256 && sha256sum V2bX.sh > V2bX.sh.sha256 && sha256sum initconfig.sh > initconfig.sh.sha256 && sha256sum configure.py > configure.py.sha256)
+          cp install.sh V2bX.sh initconfig.sh configure.py provision.py system-tools.py artifacts/
+          (cd artifacts && sha256sum install.sh > install.sh.sha256 && sha256sum V2bX.sh > V2bX.sh.sha256 && sha256sum initconfig.sh > initconfig.sh.sha256 && sha256sum configure.py > configure.py.sha256 && sha256sum provision.py > provision.py.sha256 && sha256sum system-tools.py > system-tools.py.sha256)
           gh release create "$VERSION" artifacts/* --verify-tag --title "$VERSION" \
             --notes-file docs/RELEASE-NOTES.md --prerelease

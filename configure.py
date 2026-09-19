@@ -206,7 +206,7 @@ def safe_path(path, root):
     return path
 
 
-def write_atomic(path, document, expected):
+def write_atomic(path, document, expected, notice=True):
     # Check before and just before rename; avoid overwriting a concurrent admin edit.
     current = path.read_bytes() if path.exists() else None
     if path.is_symlink() or current != expected:
@@ -219,11 +219,13 @@ def write_atomic(path, document, expected):
             handle.write(data)
             handle.flush()
             os.fsync(handle.fileno())
+        os.chmod(temporary, 0o600)
         if expected is not None:
             stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
             bfd, backup = tempfile.mkstemp(prefix='config.json.backup.' + stamp + '.', dir=path.parent)
             with os.fdopen(bfd, 'wb') as handle:
                 handle.write(expected)
+            os.chmod(backup, 0o600)
             print('旧配置已备份（0600）：', backup)
         current = path.read_bytes() if path.exists() else None
         if path.is_symlink() or current != expected:
@@ -233,7 +235,8 @@ def write_atomic(path, document, expected):
         if os.path.exists(temporary):
             os.unlink(temporary)
     print('配置已原子写入（0600）：', path)
-    print('未执行重启。注意运行中的核心默认监视配置，会自动热重载；需提前安排维护窗口。')
+    if notice:
+        print('未执行重启。注意运行中的核心默认监视配置，会自动热重载；需提前安排维护窗口。')
 
 
 def main():
@@ -241,6 +244,7 @@ def main():
     parser.add_argument('--check', metavar='FILE')
     parser.add_argument('--config', default='/etc/V2bX/config.json')
     parser.add_argument('--root', help='隔离验收根；不调用任何宿主服务')
+    parser.add_argument('--offline', action='store_true', help='仅离线生成；与普通离线向导相同')
     parser.add_argument('--edit', metavar='EDITOR')
     args = parser.parse_args()
     root = Path(args.root).resolve(strict=True) if args.root else None

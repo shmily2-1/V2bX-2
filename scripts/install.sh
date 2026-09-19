@@ -5,7 +5,7 @@ umask 022
 
 repo=shmily2-1/V2bX-2
 # Pin an acceptance release; GitHub /latest excludes prereleases.
-version=v0.1.0-core-upgrade.2
+version=v0.1.0-core-upgrade.3
 install_dir=
 destdir=
 with_systemd=0
@@ -27,7 +27,7 @@ Usage: bash install.sh [v<release-version>] [options]
   --destdir DIR        Stage into an isolated root, without root or host service changes
                       (packaging/tests only; incompatible with --install-deps)
   -h, --help           Show this help
-Default release: v0.1.0-core-upgrade.2 (prerelease / acceptance testing)
+Default release: v0.1.0-core-upgrade.3 (prerelease / acceptance testing)
 Never changes existing configuration, enables services, or starts/restarts nodes.
 USAGE
 }
@@ -66,7 +66,11 @@ fi
 missing=()
 tools=(curl unzip sha256sum install realpath flock mktemp)
 packages=(ca-certificates curl unzip coreutils util-linux)
-if ((with_manager)); then tools+=(python3); packages+=(python3); fi
+if ((with_manager)); then
+  tools+=(python3 openssl ss ip)
+  packages+=(python3 openssl)
+  if command -v apt-get >/dev/null; then packages+=(iproute2); else packages+=(iproute); fi
+fi
 for tool in "${tools[@]}"; do
   command -v "$tool" >/dev/null || missing+=("$tool")
 done
@@ -164,7 +168,7 @@ if ((with_systemd)); then
   [[ ! -e $config_dir || -d $config_dir ]] || die 'Configuration directory is not a directory.'
 fi
 
-manager_files=(V2bX.sh initconfig.sh configure.py install.sh bootstrap.sh)
+manager_files=(V2bX.sh initconfig.sh configure.py provision.py system-tools.py install.sh bootstrap.sh)
 runtime_assets=(geoip.dat geosite.dat geoip.db geosite.db dns.json route.json custom_inbound.json custom_outbound.json)
 manager_state=
 manager_entry=
@@ -243,6 +247,8 @@ if ((with_manager)); then
     if [[ $name == *.sh ]]; then bash -n "$tmp/manager-$name"; fi
   done
   python3 -c 'import ast,sys; ast.parse(open(sys.argv[1], encoding="utf-8").read())' "$tmp/manager-configure.py"
+  python3 -c 'import ast,sys; ast.parse(open(sys.argv[1], encoding="utf-8").read())' "$tmp/manager-provision.py"
+  python3 -c 'import ast,sys; ast.parse(open(sys.argv[1], encoding="utf-8").read())' "$tmp/manager-system-tools.py"
 fi
 
 mkdir -p -- "${target%/*}"

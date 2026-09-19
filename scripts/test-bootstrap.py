@@ -70,6 +70,8 @@ sys.stdout.buffer.write(zipfile.ZipFile(archive).read(member))
             bundle.writestr('management/V2bX.sh', MANAGEMENT.read_bytes())
             bundle.writestr('management/initconfig.sh', INITCONFIG.read_bytes())
             bundle.writestr('management/configure.py', CONFIGURE.read_bytes())
+            for name in ('provision.py', 'system-tools.py'):
+                bundle.writestr('management/' + name, (ROOT / name).read_bytes())
             bundle.writestr('management/install.sh', HELPER.read_bytes())
             bundle.writestr('management/bootstrap.sh', BOOTSTRAP.read_bytes())
         digest = hashlib.sha256(archive.read_bytes()).hexdigest()
@@ -101,6 +103,14 @@ sys.stdout.buffer.write(zipfile.ZipFile(archive).read(member))
         self.assertEqual((self.root / 'etc/V2bX/config.json.example').read_bytes(), SAMPLE)
         self.assertEqual((self.root / 'etc/V2bX/geoip.dat').read_text(), 'fixture-geoip.dat\n')
         self.run_menu('version')
+
+    def test_menu_version_dispatch_uses_manager_state_not_display_state(self):
+        self.run_bootstrap()
+        output = self.run_menu('menu', text='12\n17\n')
+        self.assertIn('fixture V2bX', output)
+        self.assertNotIn('操作失败', output)
+        for label in ('8. 查看 V2bX 日志', '9. 设置 V2bX 开机自启', '10. 取消 V2bX 开机自启', '16. 放行 VPS'):
+            self.assertIn(label, output)
 
     def test_isolated_menu_uses_recorded_binary(self):
         self.run_bootstrap()
@@ -215,13 +225,13 @@ sys.stdout.buffer.write(zipfile.ZipFile(archive).read(member))
 
     def test_staging_forbids_host_service_calls(self):
         self.run_bootstrap()
-        for command in ('start', 'stop', 'restart', 'enable', 'disable', 'log'):
+        for command in ('start', 'stop', 'restart', 'enable', 'disable', 'log', 'bbr', 'open-ports'):
             with self.subTest(command=command):
                 self.assertIn('隔离模式禁止', self.run_menu(command, ok=False))
 
     def test_menu_update_uses_new_repo(self):
         self.run_bootstrap()
-        output = self.run_menu('update', 'v0.1.0-core-upgrade.2')
+        output = self.run_menu('update', 'v0.1.0-core-upgrade.3')
         self.assertIn('旧进程未重启', output)
         urls = [json.loads(line) for line in self.log.read_text().splitlines()]
         self.assertTrue(all('/shmily2-1/V2bX-2/' in url for url in urls))

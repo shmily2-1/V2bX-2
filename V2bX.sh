@@ -50,6 +50,7 @@ control() {
   if [[ $action == start || $action == restart ]]; then find_binary; validate_config; fi
   systemctl "$action" V2bX.service
   if [[ $action == start || $action == restart ]]; then
+    sleep 3
     systemctl is-active --quiet V2bX.service || { fail '服务没有保持运行，请查看 v2bx log'; return 1; }
   fi
   printf '已执行 %s；使用 v2bx status / log 核对服务。\n' "$action"
@@ -63,9 +64,9 @@ status() {
 generate() {
   root_only
   if [[ -n $root ]]; then
-    python3 "$state/configure.py" --config "$config" --root "$root"
+    python3 "$state/configure.py" --config "$config" --root "$root" "$@"
   else
-    bash "$state/initconfig.sh"
+    bash "$state/initconfig.sh" "$@"
   fi
 }
 edit() {
@@ -75,7 +76,7 @@ edit() {
   if [[ -n $root ]]; then
     python3 "$state/configure.py" --config "$config" --root "$root" --edit "$editor"
   else
-    python3 "$state/configure.py" --config "$config" --edit "$editor"
+    python3 "$state/provision.py" --config "$config" --edit "$editor"
   fi
 }
 update() {
@@ -92,7 +93,7 @@ Hysteria2 跳跃（独立 hysteria2 / sing）：
   Xboard 需要配套补丁；NodeType=hysteria，面板 version=2。
   例如 port=20000-30000，server_port=8443，hop_interval=30。
   节点需 nftables/iptables、root/CAP_NET_ADMIN 和指定 UDP 范围放行。
-  不提供“关闭防火墙/放开全部端口”，不 flush 规则，不修改面板。
+  菜单16可显式确认临时放行全部入站端口；正常节点不建议全开放。
   文档：github.com/shmily2-1/V2bX-2/blob/main/docs/HYSTERIA2-PORT-HOPPING.md
 HELP
 }
@@ -119,7 +120,7 @@ uninstall() {
     canonical=$(realpath -m -- "$root$path")
     if [[ $canonical == "$self" ]]; then rm -f -- "$root$path"; fi
   done
-  for path in V2bX.sh initconfig.sh configure.py install.sh bootstrap.sh binary-path; do rm -f -- "$state/$path"; done
+  for path in V2bX.sh initconfig.sh configure.py provision.py system-tools.py install.sh bootstrap.sh binary-path; do rm -f -- "$state/$path"; done
   echo '已卸载已识别程序与服务，/etc/V2bX 和所有备份仍保留。'
 }
 help_text() {
@@ -128,15 +129,19 @@ V2bX-2 管理命令（兼容原项目，v2bx 始终指向菜单）：
   v2bx                       显示原风格菜单
   v2bx install|update [v版本] 安装程序及菜单；默认本菜单对应验收版
   v2bx update_shell [v版本]   从同一 Release 重装/升级程序及管理组件
-  v2bx config|generate       安全编辑/多节点配置向导（会提示覆盖及热重载风险）
+  v2bx config|generate       在线预检、证书申请、备份配置并启动验证
+  v2bx generate --offline    仅生成配置，不连接面板或启动服务
   v2bx start|stop|restart     启停服务，错误不会被忽略
   v2bx status|log             状态/日志
   v2bx enable|disable        自启设置
   v2bx version|x25519         调用当前真实二进制
   v2bx uninstall             确认后卸载，保留配置/证书/备份
   v2bx ports                 Hysteria2 跳跃对接说明
+  v2bx bbr                   签名发行版源内核/BBR（两次确认，不自动重启）
+  v2bx open-ports            全部TCP/UDP入站放行（危险确认、120秒自动撤回）
   v2bx --root /隔离根 ...    验收专用；服务/日志操作被禁止
-普通安装不会自动重启；不执行原版安装器/第三方 BBR/统计上报，不关闭防火墙。
+普通安装不会自动重启；在线配置确认后启动。BBR/全端口功能绝不自动执行。
+不执行原版安装器/第三方BBR脚本，不关闭防火墙。
 HELP
 }
 dispatch() {
@@ -147,7 +152,8 @@ dispatch() {
     install|update|update_shell) update "$@" ;;
     start|stop|restart|enable|disable) control "$command" ;;
     status) status ;;
-    config) edit ;; generate) generate ;; uninstall) uninstall ;;
+    config) edit ;; generate) generate "$@" ;; uninstall) uninstall ;;
+    bbr|open-ports) root_only; host_only; python3 "$state/system-tools.py" "$command" ;;
     log) host_only; journalctl -u V2bX.service -e --no-pager -f ;;
     version|x25519) find_binary; "$binary" "$command" "$@" ;;
     ports) ports_help ;;
@@ -156,28 +162,49 @@ dispatch() {
   esac
 }
 menu() {
-  local choice action
+  local choice action service_state autostart
   while true; do
+    if [[ -z $root ]] && command -v systemctl >/dev/null; then
+      if systemctl is-active --quiet V2bX.service 2>/dev/null; then service_state='已运行'; else service_state='未运行'; fi
+      if systemctl is-enabled --quiet V2bX.service 2>/dev/null; then autostart='是'; else autostart='否'; fi
+    else
+      service_state='隔离模式'
+      autostart='未知'
+    fi
     cat <<'MENU'
 ========== V2bX-2 管理菜单 ==========
-0. 编辑配置            1. 安装/重装
-2. 更新程序和菜单      3. 卸载（保留配置）
-4. 启动                5. 停止
-6. 重启                7. 状态
-8. 开机自启            9. 取消自启
-10. 日志               11. BBR（不执行第三方脚本）
-12. 版本               13. X25519 密钥
-14. 更新管理组件       15. 生成多节点配置
-16. Hysteria2 跳跃说明  17. 退出
+0. 修改配置
+————————————————
+1. 安装 V2bX
+2. 更新 V2bX
+3. 卸载 V2bX
+————————————————
+4. 启动 V2bX
+5. 停止 V2bX
+6. 重启 V2bX
+7. 查看 V2bX 状态
+8. 查看 V2bX 日志
+————————————————
+9. 设置 V2bX 开机自启
+10. 取消 V2bX 开机自启
+————————————————
+11. 一键安装 BBR（最新发行版内核）
+12. 查看 V2bX 版本
+13. 生成 X25519 密钥
+14. 升级 V2bX 维护脚本
+15. 生成 V2bX 配置文件
+16. 放行 VPS 的所有网络端口
+17. 退出脚本
 MENU
-    read -r -p '请输入 [0-17]：' choice || return 0
+    printf 'V2bX状态: %s\n是否开机自启: %s\n\n' "$service_state" "$autostart"
+    read -r -p '请输入选择 [0-17]：' choice || return 0
     case $choice in
       0) action=config ;; 1) action=install ;; 2) action=update ;; 3) action=uninstall ;;
       4) action=start ;; 5) action=stop ;; 6) action=restart ;; 7) action=status ;;
-      8) action=enable ;; 9) action=disable ;; 10) action=log ;;
-      11) echo '未执行任何 BBR/内核/网络调优；如需调优请单独审查方案。'; continue ;;
+      8) action=log ;; 9) action=enable ;; 10) action=disable ;;
+      11) action=bbr ;;
       12) action=version ;; 13) action=x25519 ;; 14) action=update_shell ;;
-      15) action=generate ;; 16) action=ports ;; 17) return 0 ;; *) echo '无效选项'; continue ;;
+      15) action=generate ;; 16) action=open-ports ;; 17) return 0 ;; *) echo '无效选项'; continue ;;
     esac
     # A subshell retains errexit for each action. Do not suppress failures via an if/function call.
     set +e

@@ -1,7 +1,6 @@
 package node
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/shmily2-1/V2bX-2/api/panel"
@@ -53,7 +52,10 @@ func (c *Controller) Start() error {
 		return fmt.Errorf("get user list error: %s", err)
 	}
 	if len(c.userList) == 0 {
-		return errors.New("add users error: not have any user")
+		if node.Type != "hysteria2" {
+			return fmt.Errorf("no authorized users; waiting mode is only verified for hysteria2")
+		}
+		log.Warn("No authorized users; starting a deny-all node and waiting for panel assignments")
 	}
 	c.aliveMap, err = c.apiClient.GetUserAlive()
 	if err != nil {
@@ -83,11 +85,7 @@ func (c *Controller) Start() error {
 	if err != nil {
 		return fmt.Errorf("add new node error: %s", err)
 	}
-	added, err := c.server.AddUsers(&vCore.AddUsersParams{
-		Tag:      c.tag,
-		Users:    c.userList,
-		NodeInfo: node,
-	})
+	added, err := c.addAuthorizedUsers(node)
 	if err != nil {
 		return fmt.Errorf("add users error: %s", err)
 	}
@@ -95,6 +93,18 @@ func (c *Controller) Start() error {
 	c.info = node
 	c.startTasks(node)
 	return nil
+}
+
+// Empty panel lists are valid, but must never enable unauthenticated access.
+func (c *Controller) addAuthorizedUsers(node *panel.NodeInfo) (int, error) {
+	if len(c.userList) == 0 {
+		return 0, nil
+	}
+	return c.server.AddUsers(&vCore.AddUsersParams{
+		Tag:      c.tag,
+		Users:    c.userList,
+		NodeInfo: node,
+	})
 }
 
 // Close implement the Close() function of the service interface

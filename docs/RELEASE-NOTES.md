@@ -1,32 +1,28 @@
-# v0.1.0-core-upgrade.2：原项目兼容安装器 / Hysteria2 跳跃验收版
+# v0.1.0-core-upgrade.3：在线配置 / 自动证书 / 完整菜单
 
-这是 **prerelease / 验收版**，请先在备用节点验证，不代表所有生产配置和客户端已兼容。当前标签为 `v0.1.0-core-upgrade.2`。
+这是 prerelease / 验收版。保留.2三内核版本与Hysteria2端口跳跃：Xray26.3.27、sing-box1.14.1兼容层、Hysteria2 core/extras2.12.3。
 
-- Xray 26.3.27、sing-box 1.14.1 兼容层、Hysteria2 core/extras 2.12.3。
-- 独立 Hysteria2 与 sing 两内核支持 Linux 端口跳跃，配套 cedar2025/Xboard 后端补丁在源码及包内 `docs/patches/`。
-- Linux amd64/arm64 一键安装，SHA256 校验，旧二进制备份，保护原配置和实际服务路径。
-- 保留原项目“一条 wget + bash”调用形状，但脚本、下载源和更新逻辑全部来自 `shmily2-1/V2bX-2`，不会调用旧仓库安装器。
-- 可创建未启动的 systemd 服务、原风格 `V2bX/v2bx` 管理菜单及 Hysteria2/Xboard 配置示例；不会自动启动、重启、设置开机启动或改防火墙。
-- 另提供 Windows amd64、macOS arm64 便携包；Linux 安装脚本不适用于它们。
+## 本次变化
 
-## 一键安装（root，Linux amd64/arm64 + systemd）
+- 菜单15不再仅生成JSON：实际读取Xboard节点/授权用户，识别协议/监听端口，预检域名/证书，确认后停止旧服务、备份写入、通过内置lego申请Let's Encrypt并启动/设置自启，检查实际PID/监听/证书。失败回滚，避免反复重启导致CA限流。
+- 菜单0私有副本编辑后走在线预检；--offline和--root保留离线、不操作宿主服务的边界。
+- 恢复0–17原编号及真实systemd状态；8日志、9自启、10取消自启、11BBR、16全部端口放行。
+- BBR只使用发行版已配置签名源的内核候选包，两次确认，不自动重启/删除旧内核。全端口临时开放有危险确认及120秒自动撤回，保留NAT/其它规则；复杂防火墙管理器会拒绝自动处理。
+- Hysteria2空用户可安全启动等待；HTTP200空数组会撤销全部用户，304不误清空。其它协议仍需授权用户才能首次启动。新增真实回环空用户认证拒绝测试。
+- 证书/私钥匹配、域名和有效期检查；ACME账户及私钥0600，坏PEM不会panic，续期解析错误不再吞掉。
+- 新增在线配置与失败回滚测试，打包/安装/维护脚本均来自同一SHA256验证的Release。
+
+## 一键安装
+
+以root在Linux amd64/arm64 + systemd执行：
 
 ```bash
-wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/main/install.sh && bash install.sh
+wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/v0.1.0-core-upgrade.3/install.sh && bash install.sh
+v2bx generate
 ```
 
-生产环境建议固定当前验收标签：
+普通安装保留已有配置、证书、服务，不自动重启旧进程；只有在线配置中确认DEPLOY才替换配置/启动。旧节点请先备份，在维护窗口更新并检查实际客户端。
 
-```bash
-wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/v0.1.0-core-upgrade.2/install.sh && bash install.sh
-```
+在线部署的HTTP面板需要显式风险确认；--from-file文件须root/0600，密钥不放命令行。HTTP-01要公网TCP80，与节点UDP443不同。Hysteria2跳跃还需面板补丁、nft/iptables及UDP范围云安全组。
 
-首次安装后编辑 `/etc/V2bX/config.json.example` 中的占位参数，保存为 `/etc/V2bX/config.json`，确认配置和证书后才执行 `systemctl enable --now V2bX` 或 `v2bx enable && v2bx start`。已有节点需要维护者自行安排重启；安装器不会自动重启。
-
-## 支持边界
-
-- systemd 是自动创建服务单元、`enable/start/stop/restart/log` 管理命令的唯一集成目标；顶层一键入口会在非 systemd 主机下载前拒绝继续。
-- OpenRC、SysVinit、runit 和未运行 systemd 的容器不在一键入口支持范围内；binary-only 部署需自行审查 Release 包并由已有 supervisor 托管。
-- Hysteria2 端口跳跃仍需要 cedar2025/Xboard 配套补丁、nftables/iptables、root 或 `CAP_NET_ADMIN`，以及云安全组/宿主防火墙的 UDP 放行；本版本不会 flush 全机规则或修改面板。
-
-阅读包内 `docs/INSTALL.md`、`docs/UPGRADE.md`、`docs/HYSTERIA2-PORT-HOPPING.md` 和 `docs/VALIDATION.md`。SHA256 与资产同源，不能替代独立签名。源码以本 Release 标签/提交为准，内嵌 sing-box 的许可证和对应源码保留。源码级测试命令只保证在仓库 checkout 中可用。
+细节及边界见 docs/ONLINE-PROVISION.md、docs/INSTALL.md。BBR内核升级、全端口开放不是节点上线的必需步骤，不在普通安装或配置中自动执行。
