@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -140,9 +141,11 @@ def nft_plan(tag):
         if chain.get('hook') == 'input':
             if chain.get('family') not in ('inet', 'ip', 'ip6') or chain.get('type') != 'filter':
                 raise RuntimeError('发现不支持的input链')
+            if any(not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_.-]*', chain.get(key, '')) for key in ('table', 'name')):
+                raise RuntimeError('nft表/链使用特殊标识符，请人工审查；不会拼接不安全命令')
             chains.append(chain)
     # Each base chain must accept: an ACCEPT in a new table cannot override later DROPs.
-    script = ''.join('insert rule ' + c['family'] + ' ' + json.dumps(c['table']) + ' ' + json.dumps(c['name'])
+    script = ''.join('insert rule ' + c['family'] + ' ' + c['table'] + ' ' + c['name']
                      + ' meta l4proto { tcp, udp } accept comment ' + json.dumps(tag) + '\n' for c in chains)
     return ruleset, script
 

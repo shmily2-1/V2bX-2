@@ -3,7 +3,7 @@
 ## 适用范围
 
 - Linux amd64 / arm64，使用 Bash；一键入口只支持正在运行的 systemd。OpenRC、SysVinit、runit 和未运行 systemd 的容器会在下载前被拒绝。
-- 当前默认：`v0.1.0-core-upgrade.3`，明确为验收版 / prerelease。固定标签使脚本和下载版本对应，不使用会排除 prerelease 的 GitHub `/releases/latest`。
+- 当前默认：`v0.1.0-core-upgrade.4`，明确为验收版 / prerelease。固定标签使脚本和下载版本对应，不使用会排除 prerelease 的 GitHub `/releases/latest`。
 - 从根 README 复制一键命令，以 root 执行。命令先完整下载到随机临时文件，成功后才执行，不使用 `curl | bash`。执行远程脚本前应人工查看内容。
 - 初始下载需要 curl 和 CA 证书。Debian/Ubuntu 可先运行 `apt-get update && apt-get install -y curl ca-certificates`；RHEL 系使用对应的 dnf/yum。
 - 脚本可用 `--install-deps` 补齐 curl、unzip、coreutils、util-linux 所提供的工具；不会整机升级。其它发行版自行安装依赖。
@@ -18,10 +18,10 @@ wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/main/install.sh && ba
 固定版本安装：
 
 ```bash
-wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/v0.1.0-core-upgrade.3/install.sh && bash install.sh
+wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/v0.1.0-core-upgrade.4/install.sh && bash install.sh
 ```
 
-如需把版本参数也显式写入审计记录，可在查看脚本后执行 `bash install.sh v0.1.0-core-upgrade.3`；该标签脚本默认值已经固定为同一版本。
+如需把版本参数也显式写入审计记录，可在查看脚本后执行 `bash install.sh v0.1.0-core-upgrade.4`；该标签脚本默认值已经固定为同一版本。
 
 ## 可审核的分步安装
 
@@ -29,7 +29,7 @@ wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/v0.1.0-core-upgrade.3
 
 ```bash
 less install.sh
-bash install.sh v0.1.0-core-upgrade.3 --non-interactive
+bash install.sh v0.1.0-core-upgrade.4 --non-interactive
 ```
 
 下载文件名 `V2bX-linux-amd64.zip` 或 `V2bX-linux-arm64.zip`，使用同一 Release 的 `.zip.sha256` 校验。只从 HTTPS GitHub 下载，不回退到未知镜像。SHA256 能检测损坏/不匹配，不是独立于 GitHub 仓库的签名。标签、脚本和 Release 都属于同一信任边界。
@@ -69,7 +69,7 @@ OpenRC、SysVinit、runit 和未运行 systemd 的容器不在本一键入口支
 4. **运行中的老进程不会自动切换**。在维护窗口人工执行 `systemctl restart V2bX`，检查日志、用户、流量及真实客户端。
 5. 若失败，先停止节点，将明确选定的备份复制为同目录临时文件，再原子替换实际 `ExecStart` 程序，恢复必要配置后启动。不要盲目选择通配符匹配出的「最后一个」备份。
 
-仅装程序：`sudo bash install.sh v0.1.0-core-upgrade.3`。另一个版本只有其 Release 和对应架构资产实际存在时才可指定。`V2bX update` 使用本地已校验适配安装器，不会运行 wyx2685 原版安装器；以后继续使用本仓库的一键命令或本地管理命令更新。
+仅装程序：`sudo bash install.sh v0.1.0-core-upgrade.4`。另一个版本只有其 Release 和对应架构资产实际存在时才可指定。`V2bX update` 使用本地已校验适配安装器，不会运行 wyx2685 原版安装器；以后继续使用本仓库的一键命令或本地管理命令更新。
 
 ## Hysteria2 端口跳跃
 

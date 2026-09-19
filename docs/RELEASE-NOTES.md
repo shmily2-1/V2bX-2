@@ -1,4 +1,4 @@
-# v0.1.0-core-upgrade.3：在线配置 / 自动证书 / 完整菜单
+# v0.1.0-core-upgrade.4：在线配置 / 自动证书 / 完整菜单
 
 这是 prerelease / 验收版。保留.2三内核版本与Hysteria2端口跳跃：Xray26.3.27、sing-box1.14.1兼容层、Hysteria2 core/extras2.12.3。
 
@@ -17,7 +17,7 @@
 以root在Linux amd64/arm64 + systemd执行：
 
 ```bash
-wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/v0.1.0-core-upgrade.3/install.sh && bash install.sh
+wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/v0.1.0-core-upgrade.4/install.sh && bash install.sh
 v2bx generate
 ```
 
