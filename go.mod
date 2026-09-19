@@ -21,7 +21,7 @@ require (
 	github.com/xtls/xray-core v1.260327.0
 	go.uber.org/zap v1.27.1
 	golang.org/x/crypto v0.54.0
-	golang.org/x/sys v0.47.0
+	golang.org/x/sys v0.48.0
 	google.golang.org/protobuf v1.36.11
 )
 
