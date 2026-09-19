@@ -355,7 +355,7 @@ def wizard():
             print('面板未启用TLS或使用REALITY，不申请公共证书。')
         cores[core] = {'Type': core, 'Log': {'Level': 'info'}}
         nodes.append(node)
-        if cfg.choose('继续添加节点', ('y', 'n'), 'n') == 'n':
+        if cfg.choose('是否继续添加节点？', ('y', 'n'), 'n') == 'n':
             return {'Log': {'Level': 'info'}, 'Cores': list(cores.values()), 'Nodes': nodes}, insecure_panel
 
 

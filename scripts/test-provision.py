@@ -67,6 +67,38 @@ class ProvisionTests(unittest.TestCase):
         with patch.object(p.cfg, 'ask', return_value='cancel'):
             self.assertFalse(p.confirm_http_panel(self.document, interactive=True))
 
+
+    def test_online_wizard_y_continues_n_finishes_one_node_at_a_time(self):
+        answers = []
+        for core, node_id, more in [('sing', '21', 'Y'), ('xray', '22', 'N')]:
+            answers += [core, self.node['ApiHost'], 'INSECURE-HTTP', self.node['ApiKey'],
+                        node_id, 'vless', more]
+        with patch('builtins.input', side_effect=answers), contextlib.redirect_stdout(io.StringIO()) as output:
+            document, insecure = p.wizard()
+        self.assertEqual([node['NodeID'] for node in document['Nodes']], [21, 22])
+        self.assertEqual([core['Type'] for core in document['Cores']], ['sing', 'xray'])
+        self.assertEqual([query['node_id'] for query in self.requests], [['21'], ['22']])
+        self.assertTrue(insecure)
+        self.assertNotIn(self.node['ApiKey'], output.getvalue())
+
+    def test_online_wizard_n_lowercase_or_default_stops_after_one(self):
+        for answer in ('N', 'n', ''):
+            with self.subTest(answer=answer):
+                answers = ['sing', self.node['ApiHost'], 'INSECURE-HTTP', self.node['ApiKey'],
+                           '1', 'vless', answer]
+                with patch('builtins.input', side_effect=answers), contextlib.redirect_stdout(io.StringIO()):
+                    document, _ = p.wizard()
+                self.assertEqual(len(document['Nodes']), 1)
+
+    def test_yes_no_prompt_accepts_both_cases_and_reprompts_invalid_choice(self):
+        for answer, expected in [('Y', 'y'), ('y', 'y'), ('N', 'n'), ('n', 'n'), ('', 'n')]:
+            with self.subTest(answer=answer), patch('builtins.input', return_value=answer) as ask:
+                self.assertEqual(p.cfg.choose('是否继续添加节点？', ('y', 'n'), 'n'), expected)
+                self.assertIn('(Y/N) [N]', ask.call_args.args[0])
+        with patch('builtins.input', side_effect=['invalid', 'Y']), contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(p.cfg.choose('是否继续添加节点？', ('y', 'n'), 'n'), 'y')
+        self.assertIn('无效选项', output.getvalue())
+
     def test_real_panel_query_and_users(self):
         checks = p.preflight(self.document, allow_insecure_panel=True)
         self.assertEqual(checks[0]['port'], 443)

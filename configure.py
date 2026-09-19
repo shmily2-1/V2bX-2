@@ -38,8 +38,12 @@ def ask(prompt, default=None, secret=False):
 
 
 def choose(prompt, values, default):
+    yes_no = tuple(values) == ('y', 'n')
+    display = ('Y', 'N') if yes_no else values
     while True:
-        value = ask(prompt + ' (' + '/'.join(values) + ')', default)
+        value = ask(prompt + ' (' + '/'.join(display) + ')', default.upper() if yes_no else default)
+        if yes_no:
+            value = value.lower()
         if value in values:
             return value
         print('无效选项，请重试。')
@@ -189,7 +193,7 @@ def generate_document():
         cores[core] = {'Type': core, 'Log': {'Level': 'info' if core != 'xray' else 'warning'}}
         # No legacy sing-box DNS/route schema or unintended ACL/YAML generated.
         nodes.append(node)
-        if choose('继续添加节点', ('y', 'n'), 'n') == 'n':
+        if choose('是否继续添加节点？', ('y', 'n'), 'n') == 'n':
             break
     result = {'Log': {'Level': 'info'}, 'Cores': list(cores.values()), 'Nodes': nodes}
     validate(result)

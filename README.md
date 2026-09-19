@@ -53,7 +53,7 @@ go build -trimpath -tags "$TAGS" -ldflags '-s -w' -o V2bX .
 
 ### Linux 一键安装（兼容原 V2bX 命令）
 
-支持 **amd64 / arm64**，目标是常见 Debian / Ubuntu / RHEL 系 **systemd** 服务器；一键入口不会在 OpenRC、SysVinit、runit 或未运行 systemd 的容器中继续安装。先备份现有配置并阅读 [升级说明](docs/UPGRADE.md)。当前固定安装 `v0.1.0-core-upgrade.6` **验收版 / prerelease**，不是未经核实的「最新版」。
+支持 **amd64 / arm64**，目标是常见 Debian / Ubuntu / RHEL 系 **systemd** 服务器；一键入口不会在 OpenRC、SysVinit、runit 或未运行 systemd 的容器中继续安装。先备份现有配置并阅读 [升级说明](docs/UPGRADE.md)。当前固定安装 `v0.1.0-core-upgrade.7` **验收版 / prerelease**，不是未经核实的「最新版」。
 
 与原项目命令格式一致：
 
@@ -66,7 +66,7 @@ wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/main/install.sh && ba
 生产环境建议固定已验收标签，避免 `main` 变化：
 
 ```bash
-wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/v0.1.0-core-upgrade.6/install.sh && bash install.sh
+wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/v0.1.0-core-upgrade.7/install.sh && bash install.sh
 ```
 
 - 从本仓库 Release 下载对应架构，校验 SHA256，原子替换程序并备份旧文件。下载/校验失败不会安装。
@@ -75,6 +75,8 @@ wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/v0.1.0-core-upgrade.6
 - 首次安装会把兼容原项目的 `V2bX` 管理命令装到 `/usr/bin/V2bX`，并创建 `v2bx` 别名，提供 `start|stop|restart|status|enable|disable|log|update|generate|config|version|x25519|uninstall|ports` 等菜单/命令。**不会覆盖配置/证书，不自动启动、重启或设置开机启动。**
 
 首次安装后执行 `v2bx generate`（菜单15）：**真实连接面板读取协议、监听端口和授权用户 → 校验域名与TCP80 → 内置lego申请证书 → 备份配置 → 启动/自启 → 检查PID、监听与证书**。菜单0编辑私有副本后走同样的在线预检/回滚流程。默认HTTP-01；也可选择DNS-01/已有证书；REALITY/无TLS不申请证书。面板HTTP须明确确认密钥明文风险。失败停止新节点并恢复旧配置；不会伪造用户或流量。
+
+菜单1 / `v2bx install` 安装后直接进入上述首次多节点指引；每配完一个节点选择“继续添加节点 y”，可一次配置多个核心/节点。它生成整套配置，不是自动追加。菜单2只更新组件。菜单3须输入 `UNINSTALL-ALL` 才彻底删除本项目配置、证书/ACME账户和备份；要保留数据请用 `v2bx uninstall --keep-config`。新版同一菜单卸载后可直接重新选择1；旧版127错误请先17退出，再执行一键入口获取新版菜单。
 
 只要离线生成配置：`v2bx generate --offline`。`--root`始终离线，禁止宿主服务操作。菜单编号与原项目一致，8日志、9自启、10取消自启、11BBR、16全端口放行。11和16均是显式危险操作，默认不运行；BBR只使用发行版软件源且不自动重启，全开放保留NAT并提供120秒自动撤回。详见[在线配置及系统维护](docs/ONLINE-PROVISION.md)。
 

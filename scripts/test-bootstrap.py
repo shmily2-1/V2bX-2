@@ -55,7 +55,7 @@ archive = pathlib.Path(args[args.index('-p') + 1])
 member = args[args.index('-p') + 2]
 sys.stdout.buffer.write(zipfile.ZipFile(archive).read(member))
 ''')
-        self.env = os.environ | {
+        self.env = {**os.environ,
             'PATH': str(self.mock) + os.pathsep + os.environ['PATH'],
             'FIXTURE_ASSETS': str(self.assets),
             'FIXTURE_LOG': str(self.log),
@@ -246,9 +246,205 @@ sys.stdout.buffer.write(zipfile.ZipFile(archive).read(member))
         self.run_bootstrap()
         config = self.root / 'etc/V2bX/config.json'
         config.write_text('private-existing-config')
-        self.run_menu('uninstall', text='UNINSTALL\n')
+        self.run_menu('uninstall', '--keep-config', text='UNINSTALL\n')
         self.assertEqual(config.read_text(), 'private-existing-config')
         self.assertFalse((self.root / 'usr/local/V2bX/V2bX').exists())
+
+
+    def seed_private_installation(self):
+        self.run_bootstrap()
+        self.run_bootstrap()  # real installer backup names, including command symlinks
+        private = {
+            'etc/V2bX/config.json': 'private-existing-config',
+            'etc/V2bX/certs/node-1/privkey.pem': 'private-test-key',
+            'etc/V2bX/certs/node-1/user/user-.json': 'private-test-acme-account',
+            'var/backups/V2bX-2/deploy-test/config.json': 'private-test-backup',
+        }
+        for name, value in private.items():
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(value)
+        return private
+
+    def test_full_uninstall_removes_private_trees_aliases_and_owned_backups(self):
+        private = self.seed_private_installation()
+        output = self.run_menu('uninstall', text='UNINSTALL-ALL\n')
+        self.assertIn('已彻底卸载', output)
+        for name in private:
+            self.assertFalse((self.root / name).exists(), name)
+        for name in ('etc/V2bX', 'var/backups/V2bX-2', 'usr/local/lib/V2bX-2',
+                     'usr/local/V2bX', 'usr/bin/V2bX', 'usr/bin/v2bx', 'usr/local/bin/v2bx',
+                     'etc/systemd/system/V2bX.service'):
+            path = self.root / name
+            self.assertFalse(path.exists() or path.is_symlink(), name)
+        self.assertEqual(list(self.root.rglob('*.backup.*')), [])
+
+    def test_old_confirmation_cannot_delete_private_data(self):
+        private = self.seed_private_installation()
+        output = self.run_menu('uninstall', text='UNINSTALL\n')
+        self.assertIn('已取消', output)
+        for name, value in private.items():
+            self.assertEqual((self.root / name).read_text(), value)
+        self.assertTrue((self.root / 'usr/local/V2bX/V2bX').exists())
+
+    def test_same_menu_uninstall_reinstall_enters_first_multinode_wizard(self):
+        self.seed_private_installation()
+        answers = (['3', 'UNINSTALL-ALL', '1'] + self.node_answers(node_id='21') + ['Y']
+                   + self.node_answers(core='xray', node_id='22') + ['N', 'SAVE', '17'])
+        output = self.run_menu('menu', text='\n'.join(answers) + '\n')
+        self.assertNotIn('操作失败', output)
+        self.assertNotIn('No such file or directory', output)
+        self.assertIn('从本仓库固定版本恢复安装器', output)
+        self.assertIn('首次安装配置指引', output)
+        document = json.loads((self.root / 'etc/V2bX/config.json').read_text())
+        self.assertEqual([node['NodeID'] for node in document['Nodes']], [21, 22])
+        self.assertEqual([core['Type'] for core in document['Cores']], ['sing', 'xray'])
+        self.assertFalse((self.root / 'etc/V2bX/certs/node-1/privkey.pem').exists())
+        self.assertTrue((self.root / 'usr/local/lib/V2bX-2/install.sh').exists())
+        self.assertTrue((self.root / 'usr/local/V2bX/V2bX').exists())
+
+    def test_new_bootstrap_after_full_uninstall(self):
+        self.seed_private_installation()
+        self.run_menu('uninstall', text='UNINSTALL-ALL\n')
+        self.run_bootstrap()
+        self.run_menu('version')
+        self.assertTrue((self.root / 'usr/local/lib/V2bX-2/install.sh').exists())
+        self.assertTrue((self.root / 'etc/V2bX/config.json.example').exists())
+        self.assertFalse((self.root / 'etc/V2bX/config.json').exists())
+
+    def test_missing_installer_download_failure_stops_before_wizard(self):
+        self.run_bootstrap()
+        (self.root / 'usr/local/lib/V2bX-2/install.sh').unlink()
+        self.write_mock('curl', 'import sys; sys.exit(22)\n')
+        temporary = self.base / 'download-temporary'
+        temporary.mkdir()
+        self.env['TMPDIR'] = str(temporary)
+        output = self.run_menu('install', ok=False)
+        self.assertNotIn('首次安装配置指引', output)
+        self.assertNotIn('程序已安装', output)
+        self.assertEqual(list(temporary.iterdir()), [])
+        self.assertFalse((self.root / 'etc/V2bX/config.json').exists())
+
+    def test_missing_installer_bad_shell_is_not_executed(self):
+        self.run_bootstrap()
+        (self.root / 'usr/local/lib/V2bX-2/install.sh').unlink()
+        bad = self.base / 'bad-helper.sh'
+        bad.write_text('if broken syntax\n')
+        self.env['FIXTURE_HELPER'] = str(bad)
+        output = self.run_menu('install', ok=False)
+        self.assertNotIn('首次安装配置指引', output)
+
+    def test_install_version_rejected_before_download(self):
+        self.run_bootstrap()
+        before = self.log.read_bytes()
+        self.run_menu('install', 'v1/../../other', ok=False)
+        self.assertEqual(self.log.read_bytes(), before)
+
+    def test_install_always_reenters_wizard_but_cancel_preserves_config(self):
+        self.run_bootstrap()
+        config = self.root / 'etc/V2bX/config.json'
+        config.write_text('private-existing-config')
+        output = self.run_menu('install', text='n\n')
+        self.assertIn('首次安装配置指引', output)
+        self.assertIn('已取消', output)
+        self.assertEqual(config.read_text(), 'private-existing-config')
+
+    def test_full_uninstall_does_not_follow_shared_certificate_symlinks(self):
+        self.run_bootstrap()
+        shared = self.base / 'shared-certs'
+        shared.mkdir()
+        key = shared / 'key.pem'
+        key.write_text('shared-private-key')
+        (self.root / 'etc/V2bX/shared').symlink_to(shared, target_is_directory=True)
+        self.run_menu('uninstall', text='UNINSTALL-ALL\n')
+        self.assertEqual(key.read_text(), 'shared-private-key')
+        self.assertFalse((self.root / 'etc/V2bX').exists())
+
+    def test_full_uninstall_rejects_escaped_parent_before_any_deletion(self):
+        self.run_bootstrap()
+        outside = self.base / 'outside-backups'
+        outside.mkdir()
+        parent = self.root / 'var'
+        parent.mkdir()
+        (parent / 'backups').symlink_to(outside, target_is_directory=True)
+        output = self.run_menu('uninstall', text='UNINSTALL-ALL\n', ok=False)
+        self.assertIn('路径逃逸隔离根', output)
+        self.assertTrue((self.root / 'usr/local/V2bX/V2bX').exists())
+        self.assertTrue((self.root / 'usr/bin/V2bX').exists())
+        self.assertEqual(list(outside.iterdir()), [])
+
+    def test_full_uninstall_rejects_custom_unit_before_any_deletion(self):
+        self.seed_private_installation()
+        unit = self.root / 'etc/systemd/system/V2bX.service'
+        unit.write_text('[Unit]\nDescription=custom service\n')
+        self.run_menu('uninstall', text='UNINSTALL-ALL\n', ok=False)
+        self.assertTrue((self.root / 'etc/V2bX/config.json').exists())
+        self.assertTrue((self.root / 'usr/local/V2bX/V2bX').exists())
+
+    def test_full_uninstall_preserves_unknown_files_in_binary_directory(self):
+        self.run_bootstrap()
+        other = self.root / 'usr/local/V2bX/unrelated-file'
+        other.write_text('unrelated')
+        unknown_backup = self.root / 'usr/local/V2bX/V2bX.backup.personal'
+        unknown_backup.write_text('not-an-installer-backup')
+        self.run_menu('uninstall', text='UNINSTALL-ALL\n')
+        self.assertEqual(other.read_text(), 'unrelated')
+        self.assertEqual(unknown_backup.read_text(), 'not-an-installer-backup')
+        self.assertFalse((self.root / 'usr/local/V2bX/V2bX').exists())
+
+
+    def test_full_uninstall_can_clean_up_a_missing_recorded_binary(self):
+        self.seed_private_installation()
+        (self.root / 'usr/local/V2bX/V2bX').unlink()
+        self.run_menu('uninstall', text='UNINSTALL-ALL\n')
+        self.assertFalse((self.root / 'etc/V2bX').exists())
+        self.assertFalse((self.root / 'var/backups/V2bX-2').exists())
+        self.assertFalse((self.root / 'usr/local/lib/V2bX-2').exists())
+
+    def test_corrupt_install_record_is_not_guessed_for_destructive_uninstall(self):
+        self.seed_private_installation()
+        (self.root / 'usr/local/lib/V2bX-2/binary-path').write_text('/bin/bash\n')
+        self.run_menu('uninstall', text='UNINSTALL-ALL\n', ok=False)
+        self.assertTrue((self.root / 'etc/V2bX/config.json').exists())
+        self.assertTrue((self.root / 'usr/local/V2bX/V2bX').exists())
+
+    def test_nested_mount_is_rejected_before_any_deletion(self):
+        self.seed_private_installation()
+        mount = str(self.root / 'etc/V2bX/certs')
+        self.write_mock('findmnt', 'print(' + repr(mount) + ')\n')
+        output = self.run_menu('uninstall', text='UNINSTALL-ALL\n', ok=False)
+        self.assertIn('卸载路径内有挂载点', output)
+        self.assertTrue((self.root / 'etc/V2bX/config.json').exists())
+        self.assertTrue((self.root / 'usr/local/V2bX/V2bX').exists())
+
+    def test_service_absence_and_real_control_errors_are_distinguished(self):
+        # Exercise the real function with a systemctl fixture; never touch host systemd.
+        source = MANAGEMENT.read_text()
+        function = source.split('stop_for_uninstall() {', 1)[1].split('\nuninstall() (', 1)[0]
+        code = ('set -euo pipefail\nfail() { echo "$*"; return 1; }\n'
+                'stop_for_uninstall() {' + function + '\nstop_for_uninstall\n')
+        calls = self.base / 'service-calls'
+        for load, active, stop_result, success in (
+                ('not-found', 'inactive', 0, True), ('not-found', 'active', 0, True),
+                ('loaded', 'active', 0, True), ('loaded', 'active', 5, False)):
+            with self.subTest(load=load, active=active, stop_result=stop_result):
+                self.write_mock('systemctl',
+                    'import sys\nfrom pathlib import Path\n'
+                    f'with Path({str(calls)!r}).open("a") as out: out.write(" ".join(sys.argv[1:])+"\\n")\n'
+                    f'if "--property=LoadState" in sys.argv: print({load!r})\n'
+                    f'elif "--property=ActiveState" in sys.argv: print({active!r})\n'
+                    f'elif sys.argv[1] == "stop": sys.exit({stop_result})\n')
+                calls.write_text('')
+                result = subprocess.run(['bash', '-c', code], env=self.env, text=True,
+                                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=10)
+                self.assertEqual(result.returncode == 0, success, result.stdout)
+                command_log = calls.read_text()
+                if load == 'not-found':
+                    self.assertNotIn('disable', command_log)
+                    if active == 'inactive':
+                        self.assertNotIn('stop ', command_log)
+                if stop_result:
+                    self.assertNotIn('disable', command_log)
 
     def test_old_install_script_and_runtime_files_preserved(self):
         path = self.root / 'usr/local/V2bX/V2bX'

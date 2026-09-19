@@ -3,7 +3,7 @@
 ## 适用范围
 
 - Linux amd64 / arm64，使用 Bash；一键入口只支持正在运行的 systemd。OpenRC、SysVinit、runit 和未运行 systemd 的容器会在下载前被拒绝。
-- 当前默认：`v0.1.0-core-upgrade.6`，明确为验收版 / prerelease。固定标签使脚本和下载版本对应，不使用会排除 prerelease 的 GitHub `/releases/latest`。
+- 当前默认：`v0.1.0-core-upgrade.7`，明确为验收版 / prerelease。固定标签使脚本和下载版本对应，不使用会排除 prerelease 的 GitHub `/releases/latest`。
 - 从根 README 复制一键命令，以 root 执行。命令先完整下载到随机临时文件，成功后才执行，不使用 `curl | bash`。执行远程脚本前应人工查看内容。
 - 初始下载需要 curl 和 CA 证书。Debian/Ubuntu 可先运行 `apt-get update && apt-get install -y curl ca-certificates`；RHEL 系使用对应的 dnf/yum。
 - 脚本可用 `--install-deps` 补齐 curl、unzip、coreutils、util-linux 所提供的工具；不会整机升级。其它发行版自行安装依赖。
@@ -18,10 +18,10 @@ wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/main/install.sh && ba
 固定版本安装：
 
 ```bash
-wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/v0.1.0-core-upgrade.6/install.sh && bash install.sh
+wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/v0.1.0-core-upgrade.7/install.sh && bash install.sh
 ```
 
-如需把版本参数也显式写入审计记录，可在查看脚本后执行 `bash install.sh v0.1.0-core-upgrade.6`；该标签脚本默认值已经固定为同一版本。
+如需把版本参数也显式写入审计记录，可在查看脚本后执行 `bash install.sh v0.1.0-core-upgrade.7`；该标签脚本默认值已经固定为同一版本。
 
 ## 可审核的分步安装
 
@@ -29,7 +29,7 @@ wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/v0.1.0-core-upgrade.6
 
 ```bash
 less install.sh
-bash install.sh v0.1.0-core-upgrade.6 --non-interactive
+bash install.sh v0.1.0-core-upgrade.7 --non-interactive
 ```
 
 下载文件名 `V2bX-linux-amd64.zip` 或 `V2bX-linux-arm64.zip`，使用同一 Release 的 `.zip.sha256` 校验。只从 HTTPS GitHub 下载，不回退到未知镜像。SHA256 能检测损坏/不匹配，不是独立于 GitHub 仓库的签名。标签、脚本和 Release 都属于同一信任边界。
@@ -63,13 +63,19 @@ OpenRC、SysVinit、runit 和未运行 systemd 的容器不在本一键入口支
 
 ## 更新与回滚
 
+菜单1 / v2bx install 会先安装，再重新进入首次多节点指引。菜单2 / v2bx update 只更新，不覆盖配置或自动重启。可在同一次向导的“继续添加节点”选择y；已有配置的修改/增加节点使用菜单0整体编辑与验证，首次指引不是追加模式。
+
+菜单3默认彻底卸载，输入UNINSTALL-ALL后删除本项目配置、证书/ACME账户及备份；保留数据须使用v2bx uninstall --keep-config并输入UNINSTALL。共享证书目标不会随符号链接追删，路径/挂载/自定义服务异常时拒绝操作。证书彻底删除后重装会重新申请，请避免反复签发触发CA限流。
+
+新版同一菜单内卸载后可以直接选1重装；已运行的旧版菜单仍使用旧函数，若报缺少install.sh，请先17退出，再重新运行上面的一键入口和v2bx。完整删除范围见ONLINE-PROVISION.md。
+
 1. 先保存 `systemctl cat V2bX`、实际二进制 SHA256，并备份 `/etc/V2bX`（含私钥），备份应只允许管理员访问。
 2. 再运行安装命令。脚本会读取现有服务 `ExecStart`，或识别 `/usr/local/V2bX/V2bX`。有两个不同安装且无可用服务路径时停止，人工确认后用 `--install-dir /实际目录`。自定义包装器不做猜测。
 3. 新二进制先通过 `version` 启动检查，再在同目录原子替换；旧程序保存在 `V2bX.backup.<UTC时间>.<随机后缀>`。原符号链接保留。已有配置、示例、systemd 文件不改。
 4. **运行中的老进程不会自动切换**。在维护窗口人工执行 `systemctl restart V2bX`，检查日志、用户、流量及真实客户端。
 5. 若失败，先停止节点，将明确选定的备份复制为同目录临时文件，再原子替换实际 `ExecStart` 程序，恢复必要配置后启动。不要盲目选择通配符匹配出的「最后一个」备份。
 
-仅装程序：`sudo bash install.sh v0.1.0-core-upgrade.6`。另一个版本只有其 Release 和对应架构资产实际存在时才可指定。`V2bX update` 使用本地已校验适配安装器，不会运行 wyx2685 原版安装器；以后继续使用本仓库的一键命令或本地管理命令更新。
+仅装程序：`sudo bash install.sh v0.1.0-core-upgrade.7`。另一个版本只有其 Release 和对应架构资产实际存在时才可指定。`V2bX update` 使用本地已校验适配安装器，不会运行 wyx2685 原版安装器；以后继续使用本仓库的一键命令或本地管理命令更新。
 
 ## Hysteria2 端口跳跃
 
