@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Online Xboard provisioning. No secrets in command arguments or diagnostics."""
 import argparse
+import copy
+import errno
 try:
     import fcntl
 except ImportError:  # Windows can still run the loopback/offline tests.
@@ -30,6 +32,187 @@ TYPES = ('hysteria', 'vless', 'vmess', 'trojan', 'shadowsocks', 'tuic', 'anytls'
 
 class ProvisionError(ValueError):
     pass
+
+
+class PortError(ProvisionError):
+    pass
+
+
+def http_port_free():
+    # Go's HTTP listener uses SO_REUSEADDR. TIME_WAIT is not a live owner.
+    for family, address in ((socket.AF_INET, ('0.0.0.0', 80)), (socket.AF_INET6, ('::', 80))):
+        try:
+            with socket.socket(family, socket.SOCK_STREAM) as sock:
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                if family == socket.AF_INET6:
+                    sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+                sock.bind(address)
+        except OSError as exc:
+            if family == socket.AF_INET6 and exc.errno in (errno.EAFNOSUPPORT, errno.EPROTONOSUPPORT, errno.EADDRNOTAVAIL):
+                continue
+            if exc.errno == errno.EADDRINUSE:
+                return False
+            raise PortError('无法检查TCP80绑定权限/地址；不会把权限错误当作端口占用') from None
+    return True
+
+
+def http_process_info(pid):
+    base = Path('/proc') / str(pid)
+    # Never read cmdline/environ: those can contain passwords.
+    stat = (base / 'stat').read_text().rsplit(') ', 1)[1].split()
+    groups = [line.split(':', 2)[2] for line in (base / 'cgroup').read_text().splitlines()]
+    units = {part for group in groups for part in group.split('/') if part.endswith('.service')}
+    unit = next(iter(units)) if len(units) == 1 else ''
+    if unit and not any(group.startswith('/system.slice/') and group.endswith('/' + unit) for group in groups):
+        raise PortError('TCP80由容器/用户服务/嵌套控制组占用，请在其管理器中停止或选择DNS证书')
+    name = re.sub(r'[^A-Za-z0-9_.:+-]', '?', (base / 'comm').read_text().strip())[:64]
+    if len(units) > 1 or any(re.search(r'docker|kubepods|containerd|libpod|lxc', group) for group in groups):
+        raise PortError('不自动终止容器托管的TCP80进程；请停止指定容器或选择DNS证书')
+    protected = {'systemd', 'init', 'sshd', 'ssh', 'dockerd', 'docker-proxy', 'containerd', 'runc', 'dbus-daemon', 'NetworkManager'}
+    if pid <= 1 or pid in (os.getpid(), os.getppid()) or name in protected:
+        raise PortError('TCP80由受保护的系统/会话进程占用，拒绝自动终止')
+    if not unit and name.lower() in ('v2bx', 'v2bx-2'):
+        raise PortError('检测到非托管V2bX进程，请先核对其节点，拒绝自动终止')
+    return {'pid': pid, 'start': stat[19], 'name': name, 'unit': unit}
+
+
+def http_listeners():
+    lines = run('ss', '-H', '-lntp', 'sport = :80').stdout.splitlines()
+    pids = set()
+    for line in lines:
+        found = re.findall(r'\bpid=(\d+)', line)
+        if not found:
+            raise PortError('TCP80占用者PID不可见，拒绝强制释放；请用root检查ss -lntp')
+        pids.update(int(pid) for pid in found)
+    try:
+        return [http_process_info(pid) for pid in sorted(pids)]
+    except (FileNotFoundError, ProcessLookupError):
+        raise PortError('TCP80占用进程刚发生变化，请重新预检；未终止任何新进程') from None
+
+
+def http_service_info(unit):
+    if not re.fullmatch(r'[A-Za-z0-9_.@:-]+\.service', unit):
+        raise PortError('无法安全识别TCP80所属服务名')
+    if unit in ('ssh.service', 'sshd.service', 'docker.service', 'containerd.service', 'dbus.service') or unit.startswith('systemd-'):
+        raise PortError('拒绝停止受保护的系统服务：' + unit)
+    props = 'Id,LoadState,ActiveState,CanStop,RefuseManualStop,ControlGroup,TriggeredBy,KillMode'
+    values = dict(line.split('=', 1) for line in run('systemctl', 'show', unit, '--property=' + props).stdout.splitlines() if '=' in line)
+    if (values.get('Id') != unit or values.get('LoadState') != 'loaded' or values.get('ActiveState') != 'active'
+            or values.get('CanStop') != 'yes' or values.get('RefuseManualStop') != 'no'
+            or values.get('KillMode') not in ('control-group', 'mixed')
+            or values.get('ControlGroup') != '/system.slice/' + unit):
+        raise PortError('服务状态/控制组不适合自动释放，请人工检查：' + unit)
+    if values.get('TriggeredBy'):
+        raise PortError('服务有socket/timer等激活源，拒绝自动停止：' + unit + '；请人工处理或选择DNS证书')
+    return values
+
+
+class HTTPPortLease:
+    def __init__(self, owners, services, allow_kill=False):
+        self.owners, self.services, self.allow_kill = owners, services, allow_kill
+        self.stopped = []
+
+    @classmethod
+    def prepare(cls, checks, ask, release=False, kill=False, interactive=False, check_only=False):
+        if not any(check.get('http_challenge') for check in checks) or http_port_free():
+            return None
+        owners = http_listeners()
+        if not owners:
+            raise PortError('TCP80绑定冲突但未找到监听进程，可能是短暂竞态；请稍后重新预检')
+        print('HTTP-01需要TCP80，检测到以下占用者（不显示进程参数）：')
+        for owner in owners:
+            print('  PID=%d  程序=%s  服务=%s' % (owner['pid'], owner['name'], owner['unit'] or '无systemd托管'))
+        services = {o['unit']: http_service_info(o['unit']) for o in owners if o['unit'] and o['unit'] != 'V2bX.service'}
+        raw = [o for o in owners if not o['unit']]
+        if services and any(c.get('transport') == 'tcp' and c.get('port') == 80 for c in checks):
+            raise PortError('新节点也需要TCP80，无法与待恢复服务共用；请改节点端口或人工迁移服务')
+        if check_only:
+            raise PortError('TCP80仍被占用；--check-only绝不停止/终止进程。部署时可明确选择临时释放')
+        if services:
+            print('临时停止：' + ', '.join(sorted(services)) + '。网站可能暂时中断；成功/失败/正常取消后恢复，不取消开机自启。')
+            print('异常断电/SIGKILL后人工恢复：systemctl start ' + ' '.join(sorted(services)))
+            print('注意：仅本次部署临时释放；将来HTTP自动续签仍需TCP80空闲，长期共用请采用DNS证书。')
+            if not (release or kill):
+                if not interactive or ask('是否临时释放TCP80？输入 Y 继续，N/回车取消', 'N').lower() != 'y':
+                    raise PortError('已取消释放TCP80，原服务未修改')
+        if raw:
+            if not hasattr(os, 'pidfd_open') or not hasattr(signal, 'pidfd_send_signal'):
+                raise PortError('内核/Python不支持安全PID句柄；独立进程请人工停止，不使用有PID复用风险的kill')
+            print('危险：独立进程无法自动恢复。将先发送TERM，5秒后仍未释放才KILL；不会终止新出现的占用者。')
+            if not kill:
+                if not interactive or ask('确认强制终止上述独立进程，输入 KILL-PORT80', '') != 'KILL-PORT80':
+                    raise PortError('未确认强制终止，原进程未修改')
+        print('已记录释放授权；只有最终输入DEPLOY后才会执行，不立即关闭进程。')
+        return cls(owners, services, bool(raw))
+
+    def release(self):
+        if http_port_free():
+            return
+        current = http_listeners()
+        approved = {o['pid']: o for o in self.owners if o['unit'] != 'V2bX.service'}
+        if not current or any(approved.get(o['pid']) != o for o in current):
+            raise PortError('TCP80占用者已变化，取消释放；请重新预检，未终止新进程')
+        for unit, expected in self.services.items():
+            if any(o['unit'] == unit for o in current) and http_service_info(unit) != expected:
+                raise PortError('TCP80服务状态已变化，取消释放：' + unit)
+        handles = []
+        try:
+            for owner in current:
+                if not owner['unit']:
+                    if not self.allow_kill:
+                        raise PortError('没有独立进程强制终止授权')
+                    fd = os.pidfd_open(owner['pid'])
+                    handles.append((owner, fd))
+                    if http_process_info(owner['pid']) != owner:
+                        raise PortError('TCP80 PID身份已变化，取消强制释放')
+            for unit in sorted(self.services):
+                if any(o['unit'] == unit for o in current):
+                    # Record BEFORE stop: a timeout/nonzero stop may already have stopped it.
+                    self.stopped.append(unit)
+                    run('systemctl', 'stop', unit)
+            for _, fd in handles:
+                try:
+                    signal.pidfd_send_signal(fd, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+            deadline = time.monotonic() + 5
+            while not http_port_free() and time.monotonic() < deadline:
+                time.sleep(0.2)
+            if not http_port_free():
+                remaining = http_listeners()
+                if any(approved.get(o['pid']) != o for o in remaining):
+                    raise PortError('TCP80出现新的占用者，停止部署；不会强杀新进程')
+                remaining_pids = {o['pid'] for o in remaining}
+                for owner, fd in handles:
+                    if owner['pid'] not in remaining_pids:
+                        continue
+                    try:
+                        signal.pidfd_send_signal(fd, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                deadline = time.monotonic() + 3
+                while not http_port_free() and time.monotonic() < deadline:
+                    time.sleep(0.2)
+            if not http_port_free():
+                raise PortError('TCP80未释放或被新进程占用，停止部署；不会循环杀进程')
+            print('TCP80已释放，仅用于本次证书申请。')
+        finally:
+            for _, fd in handles:
+                os.close(fd)
+
+    def restore(self):
+        errors = []
+        for unit in reversed(self.stopped[:]):
+            try:
+                run('systemctl', 'start', unit)
+                if run('systemctl', 'is-active', '--quiet', unit, check=False).returncode:
+                    raise PortError('未恢复active')
+                self.stopped.remove(unit)
+                print('已恢复原服务：' + unit)
+            except (OSError, ValueError, subprocess.SubprocessError):
+                errors.append(unit)
+        if errors:
+            raise PortError('TCP80原服务恢复失败，请立即执行并核查：systemctl start ' + ' '.join(errors))
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -107,7 +290,7 @@ def certificate_valid(cert):
             '-untrusted', certfile, certfile)
 
 
-def preflight(document, public_ip=None, allow_empty=False, allow_insecure_panel=False):
+def preflight(document, public_ip=None, allow_empty=False, allow_insecure_panel=False, allow_busy_http=False):
     cfg.validate(document)
     checks, cert_paths = [], set()
     for node in document['Nodes']:
@@ -148,7 +331,10 @@ def preflight(document, public_ip=None, allow_empty=False, allow_insecure_panel=
                 certificate_valid(cert)
             elif mode == 'file':
                 raise ProvisionError('file模式证书不存在')
-            elif mode == 'http':
+            due = have_cert and mode == 'http' and run(
+                'openssl', 'x509', '-in', cert['CertFile'], '-noout', '-checkend', str(31 * 86400), check=False).returncode != 0
+            if mode == 'http' and (not have_cert or due):
+                check['http_challenge'] = True
                 addresses = {item[4][0] for item in socket.getaddrinfo(domain, 80, type=socket.SOCK_STREAM)}
                 if public_ip and str(ipaddress.ip_address(public_ip)) not in addresses:
                     raise ProvisionError('域名未解析到指定公网IP')
@@ -156,12 +342,9 @@ def preflight(document, public_ip=None, allow_empty=False, allow_insecure_panel=
                     local6 = run('ip', '-6', '-o', 'addr', 'show', 'scope', 'global').stdout
                     if any(address not in local6 for address in addresses if ':' in address):
                         raise ProvisionError('AAAA记录不对应本机IPv6，请修复后再申请证书')
-                with socket.socket() as sock:
-                    try:
-                        sock.bind(('0.0.0.0', 80))
-                    except OSError:
-                        raise ProvisionError('HTTP-01需要空闲TCP80，当前被占用；不会关闭其它服务') from None
-                print('HTTP-01预检通过；仍需云安全组允许公网TCP80。证书由内置lego申请/续期。')
+                if not http_port_free() and not allow_busy_http:
+                    raise ProvisionError('HTTP-01需要TCP80；当前被占用，请在在线指引中明确选择临时释放或使用DNS证书')
+                print('HTTP-01域名预检通过；还需确认TCP80空闲/临时释放及云安全组放行。证书由内置lego申请/续期。')
         checks.append(check)
     return checks
 
@@ -230,7 +413,7 @@ def restore_config_bytes(path, original, expected):
             os.unlink(name)
 
 
-def deploy(path, document, checks, expected, timeout, enable):
+def deploy(path, document, checks, expected, timeout, enable, port_lease=None):
     active = run('systemctl', 'is-active', '--quiet', SERVICE, check=False).returncode == 0
     enabled = run('systemctl', 'is-enabled', '--quiet', SERVICE, check=False).returncode == 0
     execstart = run('systemctl', 'show', SERVICE, '-p', 'ExecStart', '--value').stdout
@@ -245,11 +428,17 @@ def deploy(path, document, checks, expected, timeout, enable):
         run('systemctl', 'daemon-reload')
         run('systemctl', 'stop', SERVICE)
         stopped = True
+        if port_lease is not None:
+            port_lease.release()
+        elif any(check.get('http_challenge') for check in checks) and not http_port_free():
+            raise ProvisionError('部署前TCP80被新进程占用；未授权自动释放，取消部署')
         cfg.write_atomic(path, document, expected, notice=False)
         written, newdata = True, path.read_bytes()
         run('systemctl', 'reset-failed', SERVICE, check=False)
         run('systemctl', 'start', SERVICE)
         pid = wait_healthy(document, checks, timeout)
+        if port_lease is not None:
+            port_lease.restore()
         if enable:
             run('systemctl', 'enable', SERVICE)
         print('服务已稳定运行：PID=' + pid + '；证书、实际监听和面板读取通过。')
@@ -290,13 +479,39 @@ def deploy(path, document, checks, expected, timeout, enable):
         print('部署失败，已回滚配置；新签发证书保留以避免CA限流。', file=sys.stderr)
         raise
     finally:
-        DROPIN.unlink(missing_ok=True)
-        reload_result = run('systemctl', 'daemon-reload', check=False)
-        if reload_result.returncode:
-            print('警告：临时服务覆盖已移除，但systemd daemon-reload失败。', file=sys.stderr)
+        try:
+            if port_lease is not None:
+                port_lease.restore()
+        finally:
+            DROPIN.unlink(missing_ok=True)
+            reload_result = run('systemctl', 'daemon-reload', check=False)
+            if reload_result.returncode:
+                print('警告：临时服务覆盖已移除，但systemd daemon-reload失败。', file=sys.stderr)
 
 
-def wizard():
+def reusable_certificate(existing, node, domain, mode, nodes):
+    used = {n['CertConfig'].get(key) for n in nodes for key in ('CertFile', 'KeyFile')}
+    for previous in (existing or {}).get('Nodes', []):
+        if (previous.get('ApiHost', '').rstrip('/') != node['ApiHost'] or previous.get('NodeID') != node['NodeID']
+                or previous.get('NodeType') != node['NodeType']):
+            continue
+        cert = previous.get('CertConfig', {})
+        if cert.get('CertMode') != mode or cert.get('CertDomain', '').lower().rstrip('.') != domain.lower().rstrip('.'):
+            continue
+        paths = [Path(cert.get(key, '')) for key in ('CertFile', 'KeyFile')]
+        if any(not p.is_absolute() or not p.is_file() or p.is_symlink() or p.resolve() != p or str(p) in used for p in paths):
+            continue
+        try:
+            certificate_valid(cert)
+        except (ValueError, OSError, subprocess.SubprocessError):
+            print('已有证书未通过校验，不自动复用；请核对证书，避免重复申请。')
+            continue
+        print('已验证并复用该节点现有证书及ACME配置，不创建新的证书目录。')
+        return copy.deepcopy(cert)
+    return None
+
+
+def wizard(existing=None):
     print('在线配置：真实验证面板，申请证书，启动并检查服务；不会创建面板用户。')
     nodes, cores, insecure_panel = [], {}, False
     while True:
@@ -332,13 +547,14 @@ def wizard():
             domain = cfg.ask('证书域名', info.get('server_name') or info.get('host') or '')
             mode = cfg.choose('证书方式', ('http', 'dns', 'file'), 'http')
             directory = '/etc/V2bX/certs/node-' + str(node['NodeID']) + '-' + str(len(nodes) + 1)
-            cert = {'CertMode': mode, 'CertDomain': domain, 'CertFile': directory + '/fullchain.pem', 'KeyFile': directory + '/privkey.pem'}
+            reused = reusable_certificate(existing, node, domain, mode, nodes) if mode != 'file' else None
+            cert = reused or {'CertMode': mode, 'CertDomain': domain, 'CertFile': directory + '/fullchain.pem', 'KeyFile': directory + '/privkey.pem'}
             if mode == 'file':
                 cert['CertFile'], cert['KeyFile'] = cfg.required('已有证书绝对路径'), cfg.required('已有私钥绝对路径')
-            else:
+            elif reused is None:
                 cert['Email'] = cfg.ask('ACME联系邮箱（可空，不编造邮箱）', '')
                 print("申请证书即同意Let's Encrypt服务条款。")
-            if mode == 'dns':
+            if mode == 'dns' and reused is None:
                 cert['Provider'], cert['DNSEnv'] = cfg.required('lego DNS Provider'), {}
                 while True:
                     name = cfg.ask('DNS凭据变量名（空结束）', '')
@@ -375,6 +591,8 @@ def main():
     parser.add_argument('--public-ip', help='验证HTTP证书域名解析')
     parser.add_argument('--allow-empty', action='store_true')
     parser.add_argument('--allow-insecure-panel', action='store_true', help='显式允许HTTP面板（密钥明文传输）')
+    parser.add_argument('--release-http-port', action='store_true', help='明确允许本次签证书临时停止TCP80托管服务，完成后恢复')
+    parser.add_argument('--kill-http-port', action='store_true', help='危险：允许TERM/KILL非托管TCP80占用者，无法自动恢复；同时允许临时停止托管服务')
     parser.add_argument('--yes', action='store_true', help='确认停服务/替换/证书条款/启动')
     parser.add_argument('--no-enable', action='store_true')
     parser.add_argument('--check-only', action='store_true')
@@ -411,10 +629,13 @@ def main():
                 subprocess.run(shlex.split(args.edit) + [str(draft)], check=True)
                 document = cfg.read_document(draft)
         else:
-            document, wizard_insecure = wizard()
+            document, wizard_insecure = wizard(cfg.read_document(path) if expected is not None else None)
         allow_http = confirm_http_panel(document, args.allow_insecure_panel or wizard_insecure,
                                         not (args.yes or args.check_only))
-        checks = preflight(document, args.public_ip, args.allow_empty, allow_http)
+        checks = preflight(document, args.public_ip, args.allow_empty, allow_http, allow_busy_http=True)
+        port_lease = HTTPPortLease.prepare(checks, cfg.ask, release=args.release_http_port,
+                                          kill=args.kill_http_port, interactive=not args.yes,
+                                          check_only=args.check_only)
         if args.check_only:
             print('预检完成；未写入配置、申请证书或操作服务。')
             return
@@ -422,7 +643,7 @@ def main():
         if not args.yes and cfg.ask('同意证书条款并部署？输入 DEPLOY', '') != 'DEPLOY':
             print('已取消，未更改服务和配置。')
             return
-        deploy(path, document, checks, expected, args.timeout, not args.no_enable)
+        deploy(path, document, checks, expected, args.timeout, not args.no_enable, port_lease)
 
 
 if __name__ == '__main__':

@@ -32,6 +32,7 @@ jobs:
           python3 scripts/test-install.py
           python3 scripts/test-bootstrap.py
           python3 scripts/test-provision.py
+          python3 scripts/test-http-port.py
 
   test:
     runs-on: ubuntu-latest
@@ -61,6 +62,8 @@ jobs:
         run: bash scripts/test-porthop-netns.sh "${{ matrix.backend }}"
       - name: Real maintenance firewall apply and rollback (disposable network namespace)
         run: sudo env V2BX_SYSTEM_TOOLS_NETNS=1 unshare --net python3 scripts/test-system-tools-netns.py
+      - name: Real HTTP-01 port force release (disposable network namespace)
+        run: sudo env V2BX_HTTP_PORT_NETNS=1 unshare --net python3 scripts/test-http-port.py --live-netns
 
   porthop-debian12:
     runs-on: ubuntu-latest

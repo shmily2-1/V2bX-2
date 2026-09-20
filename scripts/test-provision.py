@@ -26,6 +26,8 @@ spec.loader.exec_module(system_tools)
 
 class ProvisionTests(unittest.TestCase):
     def setUp(self):
+        # Unit wizard answers must not escape input mocks into a real TTY/getpass.
+        self.enterContext(patch.object(p.cfg.sys.stdin, 'isatty', return_value=False))
         self.temp = tempfile.TemporaryDirectory(prefix='v2bx-provision-test-')
         self.addCleanup(self.temp.cleanup)
         self.base = Path(self.temp.name)
@@ -161,7 +163,62 @@ class ProvisionTests(unittest.TestCase):
             with self.assertRaisesRegex(p.ProvisionError, '公网IP'):
                 p.preflight(self.document, public_ip='192.0.2.1', allow_insecure_panel=True)
 
-    def deployment(self, failure=False, existing=True, interruption=False):
+    def test_reuse_valid_same_node_certificate_preserves_acme(self):
+        cert = {'CertMode': 'http', 'CertDomain': 'node.invalid', 'Email': 'existing@example.test',
+                'CertFile': str(self.base/'cert.pem'), 'KeyFile': str(self.base/'key.pem')}
+        for key in ('CertFile', 'KeyFile'):
+            Path(cert[key]).write_text('fixture; openssl is isolated')
+        self.node['CertConfig'] = cert
+        with patch.object(p, 'certificate_valid'):
+            result = p.reusable_certificate(self.document, self.node, 'node.invalid', 'http', [])
+            self.assertEqual(result, cert)
+            self.assertIsNot(result, cert)
+            self.assertIsNone(p.reusable_certificate(self.document, self.node, 'other.invalid', 'http', []))
+            self.assertIsNone(p.reusable_certificate(self.document, self.node, 'node.invalid', 'dns', []))
+            self.assertIsNone(p.reusable_certificate(self.document, dict(self.node, NodeID=2), 'node.invalid', 'http', []))
+            self.assertIsNone(p.reusable_certificate(self.document, dict(self.node, ApiHost='https://other.invalid'), 'node.invalid', 'http', []))
+            self.assertIsNone(p.reusable_certificate(self.document, self.node, 'node.invalid', 'http', [self.node]))
+
+    def test_invalid_existing_certificate_is_not_reused(self):
+        self.node['CertConfig'] = {'CertMode': 'http', 'CertDomain': 'node.invalid',
+                                  'CertFile': str(self.base/'cert'), 'KeyFile': str(self.base/'key')}
+        for key in ('CertFile', 'KeyFile'):
+            Path(self.node['CertConfig'][key]).touch()
+        with patch.object(p, 'certificate_valid', side_effect=p.ProvisionError('invalid')):
+            self.assertIsNone(p.reusable_certificate(self.document, self.node, 'node.invalid', 'http', []))
+
+    def test_wizard_reuses_certificate_without_asking_for_acme_email(self):
+        self.info.update(tls=1, server_name='node.invalid')
+        cert = {'CertMode': 'http', 'CertDomain': 'node.invalid', 'Email': 'retained@example.test',
+                'CertFile': str(self.base/'cert'), 'KeyFile': str(self.base/'key')}
+        answers = ['sing', self.node['ApiHost'], 'INSECURE-HTTP', self.node['ApiKey'], '1', 'vless', '', '', 'N']
+        with patch.object(p, 'reusable_certificate', return_value=copy.deepcopy(cert)), patch('builtins.input', side_effect=answers):
+            document, _ = p.wizard(self.document)
+        self.assertEqual(document['Nodes'][0]['CertConfig'], cert)
+
+    def test_valid_existing_http_certificate_does_not_require_free_port(self):
+        self.info['tls'] = 1
+        self.node['CertConfig'] = {'CertMode': 'http', 'CertDomain': 'node.invalid',
+                                  'CertFile': str(self.base/'cert'), 'KeyFile': str(self.base/'key')}
+        for key in ('CertFile', 'KeyFile'):
+            Path(self.node['CertConfig'][key]).touch()
+        with patch.object(p, 'certificate_valid'), patch.object(p, 'run', return_value=subprocess.CompletedProcess([], 0, '', '')), patch.object(p, 'http_port_free') as probe:
+            checks = p.preflight(self.document, allow_insecure_panel=True)
+        self.assertFalse(checks[0].get('http_challenge'))
+        probe.assert_not_called()
+
+    def test_busy_http_port_only_deferred_with_explicit_preflight_mode(self):
+        self.info['tls'] = 1
+        self.node['CertConfig'] = {'CertMode': 'http', 'CertDomain': 'node.invalid',
+                                  'CertFile': str(self.base/'cert'), 'KeyFile': str(self.base/'key')}
+        resolved = [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('192.0.2.1', 80))]
+        with patch.object(p, 'inspect_node', return_value={'info': self.info, 'protocol': 'vless', 'transport': 'tcp', 'port': 443, 'users': 1}), patch.object(p.socket, 'getaddrinfo', return_value=resolved), patch.object(p, 'http_port_free', return_value=False):
+            with self.assertRaisesRegex(p.ProvisionError, '临时释放'):
+                p.preflight(self.document, allow_insecure_panel=True)
+            checks = p.preflight(self.document, allow_insecure_panel=True, allow_busy_http=True)
+        self.assertTrue(checks[0]['http_challenge'])
+
+    def deployment(self, failure=False, existing=True, interruption=False, lease=None):
         path = self.base/'config.json'
         old = b'{"Cores": [{"Type": "sing"}], "Nodes": [], "preserve":"original bytes"}\n' if existing else None
         if existing:
@@ -194,9 +251,9 @@ class ProvisionTests(unittest.TestCase):
         with patch.object(p, 'DROPIN', dropin), patch.object(p, 'run', side_effect=fake_run), patch.object(p, 'wait_healthy', side_effect=ready):
             if failure or interruption:
                 with self.assertRaises((p.ProvisionError, KeyboardInterrupt)):
-                    p.deploy(path, self.document, [{'users':1}], old, 30, True)
+                    p.deploy(path, self.document, [{'users':1}], old, 30, True, lease)
             else:
-                p.deploy(path, self.document, [{'users':1}], old, 30, True)
+                p.deploy(path, self.document, [{'users':1}], old, 30, True, lease)
         self.assertFalse(dropin.exists())
         if failure or interruption:
             if existing:
@@ -219,6 +276,15 @@ class ProvisionTests(unittest.TestCase):
 
     def test_interruption_rolls_back(self):
         self.deployment(interruption=True)
+
+    def test_port_lease_restored_after_success_failure_and_interruption(self):
+        from unittest.mock import Mock
+        for options in ({}, {'failure': True}, {'interruption': True}):
+            with self.subTest(options=options):
+                lease = Mock()
+                self.deployment(lease=lease, **options)
+                lease.release.assert_called_once()
+                lease.restore.assert_called()
 
 
 class MaintenanceTests(unittest.TestCase):

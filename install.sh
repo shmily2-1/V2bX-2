@@ -3,7 +3,7 @@
 # No upstream installer, telemetry, firewall reset or third-party optimizer is run.
 set -euo pipefail
 repo=shmily2-1/V2bX-2
-script_ref=v0.1.0-core-upgrade.7
+script_ref=v0.1.0-core-upgrade.8
 version=$script_ref
 destdir=
 install_dir=
@@ -20,7 +20,7 @@ usage() {
   --non-interactive   不询问是否生成配置，绝不自动启动/重启
   --destdir DIR       隔离安装验收，不安装依赖、不执行宿主服务命令
   -h, --help          显示帮助
-默认 v0.1.0-core-upgrade.7，Linux amd64/arm64 + systemd。
+默认 v0.1.0-core-upgrade.8，Linux amd64/arm64 + systemd。
 兼容原项目的 V2bX/v2bx 菜单；不清空防火墙，不覆盖配置/证书/已有服务。
 一键入口仅支持正在运行的 systemd；OpenRC/SysVinit/runit 不支持。
 HELP

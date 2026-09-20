@@ -2,7 +2,7 @@
 # Original-style V2bX management menu, adapted from wyx2685/V2bX-script (MPL-2.0).
 # Installed as /usr/bin/V2bX and /usr/local/bin/v2bx. No upstream downloads.
 set -euo pipefail
-script_ref=v0.1.0-core-upgrade.7
+script_ref=v0.1.0-core-upgrade.8
 root=
 if [[ ${1:-} == --root ]]; then
   [[ $# -ge 3 && $2 =~ ^/[a-zA-Z0-9_./-]+$ ]] || { echo 'Invalid --root' >&2; exit 2; }
