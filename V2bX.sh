@@ -2,7 +2,7 @@
 # Original-style V2bX management menu, adapted from wyx2685/V2bX-script (MPL-2.0).
 # Installed as /usr/bin/V2bX and /usr/local/bin/v2bx. No upstream downloads.
 set -euo pipefail
-script_ref=v0.1.0-core-upgrade.8
+script_ref=v0.1.0-core-upgrade.9
 root=
 if [[ ${1:-} == --root ]]; then
   [[ $# -ge 3 && $2 =~ ^/[a-zA-Z0-9_./-]+$ ]] || { echo 'Invalid --root' >&2; exit 2; }
@@ -118,8 +118,7 @@ update() {
 }
 install_node() {
   run_installer "$@"
-  echo '========== 首次安装配置指引（支持多个节点） =========='
-  echo '程序已安装。下面重新填写面板/节点/证书；确认部署前不会覆盖现有配置。'
+  echo '========== 首次安装配置指引 =========='
   generate
 }
 ports_help() {
@@ -248,11 +247,12 @@ help_text() {
   cat <<'HELP'
 V2bX-2 管理命令（兼容原项目，v2bx 始终指向菜单）：
   v2bx                       显示原风格菜单
-  v2bx install [v版本]       安装后进入首次多节点配置指引
+  v2bx install [v版本]       安装后填写四项信息并自动配置启动
   v2bx update [v版本]        仅更新程序及菜单，不重新配置/启动
   v2bx update_shell [v版本]   从同一 Release 重装/升级程序及管理组件
   v2bx config|generate       在线预检、证书申请、备份配置并启动验证
   v2bx generate --offline    仅生成配置，不连接面板或启动服务
+  v2bx generate --advanced   完整协议/证书/多节点配置向导
   v2bx start|stop|restart     启停服务，错误不会被忽略
   v2bx status|log             状态/日志
   v2bx enable|disable        自启设置
@@ -263,7 +263,7 @@ V2bX-2 管理命令（兼容原项目，v2bx 始终指向菜单）：
   v2bx bbr                   签名发行版源内核/BBR（两次确认，不自动重启）
   v2bx open-ports            全部TCP/UDP入站放行（危险确认、120秒自动撤回）
   v2bx --root /隔离根 ...    验收专用；服务/日志操作被禁止
-安装进入首次指引，确认DEPLOY后启动；更新不会自动重启。BBR/全端口功能绝不自动执行。
+安装填写核心、面板地址、密钥、节点ID后自动启动；更新不会自动重启。
 不执行原版安装器/第三方BBR脚本，不关闭防火墙。
 HELP
 }

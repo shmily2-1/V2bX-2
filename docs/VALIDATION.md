@@ -1,4 +1,10 @@
-# .8 TCP80占用与证书复用回归记录
+# .9 四项自动配置与证书复用回归记录
+
+发布前检查：安装器26项、bootstrap/菜单36项、在线配置/维护40项、HTTP端口授权/身份/恢复18项，共120项通过；Bash语法、ShellCheck、Python语法和git diff --check通过。
+
+在WSL独立网络命名空间中使用真实systemd、真实本地面板和既有真实V2bX构建产物，验证sing/xray VLESS及sing/独立Hysteria2四项输入、协议识别、配置写入、服务active/enabled、认证转发、TLS和证书复用。测试未访问公共CA或生产面板，临时服务已清理。
+
+## .8 TCP80占用与证书复用回归记录
 
 发布前检查：安装器26项、bootstrap/菜单36项、在线配置/维护27项、HTTP端口授权/身份/恢复18项，共107项通过；Bash语法、ShellCheck和Python语法通过。WSL原生Linux临时目录执行，真实隔离netns验证占用TCP80的独立进程先TERM、5秒后KILL及pidfd身份固定。
 

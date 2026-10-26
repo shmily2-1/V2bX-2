@@ -5,6 +5,7 @@ import copy
 import importlib.util
 import io
 import json
+from types import SimpleNamespace
 import os
 from pathlib import Path
 import subprocess
@@ -106,6 +107,130 @@ class ProvisionTests(unittest.TestCase):
         self.assertEqual(checks[0]['port'], 443)
         self.assertEqual(checks[0]['users'], 1)
         self.assertEqual(self.requests[0]['token'], ['test-private&secret'])
+
+    def quick_answers(self, core='', node_id='1'):
+        return [core, self.node['ApiHost'], self.node['ApiKey'], node_id]
+
+    def test_quick_wizard_asks_only_four_fields_and_probes_matching_protocol(self):
+        with patch('builtins.input', side_effect=self.quick_answers()) as ask:
+            document = p.quick_wizard()
+        self.assertEqual(ask.call_count, 4)
+        self.assertEqual([c.args[0].split(': ')[0] for c in ask.call_args_list],
+                         ['核心 (xray/sing/hysteria2) [sing]', '面板地址', '面板密钥（不回显）', '节点ID'])
+        node = document['Nodes'][0]
+        self.assertEqual((node['Core'], node['NodeType'], node['NodeID']), ('sing', 'vless', 1))
+        self.assertEqual(node['CertConfig'], {'CertMode': 'none'})
+        self.assertEqual([q['node_type'][0] for q in self.requests], ['hysteria', 'vless'])
+
+    def test_quick_hysteria2_reads_domain_and_defaults_to_http_without_more_input(self):
+        self.info = {'protocol': 'hysteria', 'version': 2, 'server_port': 15000,
+                     'server_name': 'p-jp4.example.test', 'ports': '10000-60000'}
+        with patch('builtins.input', side_effect=self.quick_answers(node_id='150')) as ask:
+            document = p.quick_wizard()
+        cert = document['Nodes'][0]['CertConfig']
+        self.assertEqual(ask.call_count, 4)
+        self.assertEqual((cert['CertMode'], cert['CertDomain'], cert['Email']),
+                         ('http', 'p-jp4.example.test', ''))
+        self.assertTrue(cert['CertFile'].startswith('/etc/V2bX/certs/node-150-'))
+
+    def test_quick_reality_does_not_create_public_certificate(self):
+        self.info.update(tls=2)
+        with patch('builtins.input', side_effect=self.quick_answers()):
+            document = p.quick_wizard()
+        self.assertEqual(document['Nodes'][0]['CertConfig'], {'CertMode': 'none'})
+
+    def test_quick_tls_domain_uses_nested_settings(self):
+        self.info.update(tls=1, tls_settings={'server_name': 'tls.example.test'})
+        with patch('builtins.input', side_effect=self.quick_answers()):
+            document = p.quick_wizard()
+        self.assertEqual(document['Nodes'][0]['CertConfig']['CertDomain'], 'tls.example.test')
+
+    def test_quick_missing_domain_fails_without_inventing_one_or_fifth_prompt(self):
+        self.info.update(tls=1)
+        with patch('builtins.input', side_effect=self.quick_answers()) as ask:
+            with self.assertRaisesRegex(p.ProvisionError, '域名'):
+                p.quick_wizard()
+        self.assertEqual(ask.call_count, 4)
+
+    def test_quick_keeps_other_nodes_settings_and_existing_certificate_paths(self):
+        self.info.update(tls=1, server_name='old.example.test')
+        cert = {'CertMode': 'dns', 'CertDomain': 'old.example.test', 'Provider': 'provider',
+                'Email': 'existing@example.test', 'DNSEnv': {'TEST_TOKEN': 'retained'},
+                'CertFile': '/etc/V2bX/cert.pem', 'KeyFile': '/etc/V2bX/key.pem'}
+        self.node.update(ReportMinTraffic=23, ListenIP='127.0.0.1', CertConfig=cert)
+        other = copy.deepcopy(self.node)
+        other.update(NodeID=2, ApiHost='https://other.example.test')
+        self.document['Nodes'].append(other)
+        self.document['CustomRoot'] = {'retained': True}
+        original = copy.deepcopy(self.document)
+        with patch('builtins.input', side_effect=self.quick_answers()):
+            document = p.quick_wizard(self.document)
+        self.assertEqual(document, original)
+        self.assertEqual(self.document, original)
+
+    def test_quick_adds_new_node_without_deleting_old_node_or_core(self):
+        with patch('builtins.input', side_effect=self.quick_answers(core='xray', node_id='2')):
+            document = p.quick_wizard(self.document)
+        self.assertEqual(document['Nodes'][0], self.node)
+        self.assertEqual([n['NodeID'] for n in document['Nodes']], [1, 2])
+        self.assertEqual([c['Type'] for c in document['Cores']], ['sing', 'xray'])
+
+    def test_quick_certificate_paths_distinguish_panels_with_same_node_id(self):
+        self.info.update(tls=1, server_name='tls.example.test')
+        with patch('builtins.input', side_effect=self.quick_answers()):
+            first = p.quick_wizard()['Nodes'][0]
+        second = dict(first, ApiHost='https://another.example.test')
+        cert = p.automatic_certificate(second, self.info, None)
+        self.assertNotEqual(first['CertConfig']['CertFile'], cert['CertFile'])
+
+    def test_quick_incompatible_core_auth_failure_and_bad_id_fail_without_secrets(self):
+        with patch('builtins.input', side_effect=self.quick_answers(core='hysteria2')):
+            with self.assertRaisesRegex(p.ProvisionError, '不兼容'):
+                p.quick_wizard()
+        self.status = 403
+        with patch('builtins.input', side_effect=self.quick_answers()):
+            with self.assertRaises(p.ProvisionError) as error:
+                p.quick_wizard()
+        self.assertIn('403', str(error.exception))
+        self.assertNotIn(self.node['ApiKey'], str(error.exception))
+        with patch('builtins.input', side_effect=self.quick_answers(node_id='0')):
+            with self.assertRaisesRegex(p.ProvisionError, '节点ID'):
+                p.quick_wizard()
+
+    def test_quick_deploy_runs_real_panel_preflight_without_confirmations_or_reminders(self):
+        args = SimpleNamespace(public_ip=None, timeout=30, no_enable=False, kill_http_port=False, check_only=False)
+        with patch.object(p.cfg, 'ask', side_effect=AssertionError('unexpected fifth prompt')), \
+                patch.object(p, 'deploy') as deploy, contextlib.redirect_stdout(io.StringIO()) as out:
+            p.quick_deploy(self.base/'config.json', self.document, None, args)
+        deploy.assert_called_once()
+        self.assertEqual(len(self.requests), 2)
+        self.assertIn('配置完成，节点已启动', out.getvalue())
+        for text in ('INSECURE-HTTP', 'DEPLOY', '警告', '安全', self.node['ApiKey']):
+            self.assertNotIn(text, out.getvalue())
+
+    def test_quick_deploy_preserves_error_and_never_reports_success(self):
+        args = SimpleNamespace(public_ip=None, timeout=30, no_enable=False, kill_http_port=False, check_only=False)
+        with patch.object(p, 'deploy', side_effect=p.ProvisionError('actual deployment failed')), \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            with self.assertRaisesRegex(p.ProvisionError, 'actual deployment failed'):
+                p.quick_deploy(self.base/'config.json', self.document, None, args)
+        self.assertNotIn('配置完成', out.getvalue())
+
+    def test_quick_check_only_never_deploys(self):
+        args = SimpleNamespace(public_ip=None, timeout=30, no_enable=False, kill_http_port=False, check_only=True)
+        with patch.object(p, 'deploy') as deploy, contextlib.redirect_stdout(io.StringIO()) as out:
+            p.quick_deploy(self.base/'config.json', self.document, None, args)
+        deploy.assert_not_called()
+        self.assertIn('配置检查通过', out.getvalue())
+
+    def test_quick_port_handling_is_noninteractive_and_does_not_authorize_unknown_kills(self):
+        args = SimpleNamespace(public_ip=None, timeout=30, no_enable=False, kill_http_port=False, check_only=False)
+        with patch.object(p.HTTPPortLease, 'prepare', return_value=None) as prepare, \
+                patch.object(p, 'deploy'), contextlib.redirect_stdout(io.StringIO()):
+            p.quick_deploy(self.base/'config.json', self.document, None, args)
+        self.assertTrue(prepare.call_args.kwargs['release'])
+        self.assertFalse(prepare.call_args.kwargs['interactive'])
+        self.assertFalse(prepare.call_args.kwargs['kill'])
 
     def test_redirect_rejected_without_leaking_token(self):
         self.status = 302

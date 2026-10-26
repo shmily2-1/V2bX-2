@@ -5,7 +5,7 @@ umask 022
 
 repo=shmily2-1/V2bX-2
 # Pin an acceptance release; GitHub /latest excludes prereleases.
-version=v0.1.0-core-upgrade.8
+version=v0.1.0-core-upgrade.9
 install_dir=
 destdir=
 with_systemd=0
@@ -27,7 +27,7 @@ Usage: bash install.sh [v<release-version>] [options]
   --destdir DIR        Stage into an isolated root, without root or host service changes
                       (packaging/tests only; incompatible with --install-deps)
   -h, --help           Show this help
-Default release: v0.1.0-core-upgrade.8 (prerelease / acceptance testing)
+Default release: v0.1.0-core-upgrade.9 (prerelease / acceptance testing)
 Never changes existing configuration, enables services, or starts/restarts nodes.
 USAGE
 }
@@ -215,7 +215,7 @@ download() {
   curl --fail --silent --show-error --location --retry 3 --connect-timeout 15 --max-time 600 \
     --proto '=https' --proto-redir '=https' --tlsv1.2 "$1" -o "$2"
 }
-echo "Installing $repo $version ($arch). Acceptance releases are not production guarantees."
+echo "正在安装 V2bX-2 $version ($arch)…"
 download "$base/$asset" "$tmp/$asset"
 download "$base/$asset.sha256" "$tmp/$asset.sha256"
 # Never allow malformed checksum files to make sha256sum read arbitrary local paths.
@@ -228,7 +228,7 @@ actual=$(sha256sum "$tmp/$asset")
 # Extract only known entries to files we create; never unpack arbitrary archive paths.
 unzip -p "$tmp/$asset" V2bX > "$tmp/V2bX"
 chmod 0755 "$tmp/V2bX"
-"$tmp/V2bX" version || die 'Downloaded binary could not run; existing installation is unchanged (check CPU / noexec TMPDIR).'
+"$tmp/V2bX" version > /dev/null || die 'Downloaded binary could not run; existing installation is unchanged (check CPU / noexec TMPDIR).'
 if ((with_systemd)); then
   unzip -p "$tmp/$asset" example/hysteria2-xboard.json > "$tmp/config.json.example"
 fi
@@ -260,7 +260,6 @@ if [[ -e $target ]]; then
   [[ -f $target ]] || die 'Existing binary is not a regular file.'
   backup=$(mktemp "$target.backup.$(date -u +%Y%m%dT%H%M%SZ).XXXXXX")
   cp -p -- "$target" "$backup"
-  echo "Backup: $backup"
 fi
 if ((with_systemd)); then
   [[ -d $config_dir ]] || install -d -m 0750 "$config_dir"
@@ -296,9 +295,6 @@ UNIT
     ln -- "$unit_staged" "$unit"
     rm -f -- "$unit_staged"
     unit_staged=
-    echo 'Created V2bX.service, but did NOT enable or start it.'
-  else
-    echo 'Existing V2bX.service was preserved unchanged.'
   fi
 fi
 
@@ -361,19 +357,12 @@ fi
 # Commit the executable last. Filesystem failures above leave the old binary intact.
 mv -f -- "$staged" "$target"
 staged=
-echo "Installed $version into $target. Existing configuration was NOT modified."
 if ((with_systemd)); then
   if ((create_unit)) && [[ -z $destdir ]]; then
     if ! systemctl daemon-reload; then
-      echo 'WARNING: Binary and unit installed, but systemd reload failed. Run systemctl daemon-reload before starting.' >&2
+      die 'systemd daemon-reload failed; program files were installed but service registration did not complete.'
     fi
   fi
-  echo 'New node: review /etc/V2bX/config.json.example, create config.json, fill panel/key/node/certificate values.'
-  echo 'After validation only: systemctl enable --now V2bX (new node), or systemctl restart V2bX (update).'
 fi
+echo "程序安装完成：$version"
 [[ -z $destdir ]] || echo "Staging only: $destdir. No host service commands were executed."
-echo 'No node was started/restarted. No firewall rules or certificates were changed.'
-if ((with_manager)); then
-  echo 'Management menu: v2bx (or /usr/bin/V2bX). Existing /usr/local/bin/V2bX binaries are preserved.'
-fi
-echo 'Hysteria2 hopping also requires the Xboard patch, nftables/iptables and UDP security-group rules; see docs/HYSTERIA2-PORT-HOPPING.md.'

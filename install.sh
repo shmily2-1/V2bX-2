@@ -3,7 +3,7 @@
 # No upstream installer, telemetry, firewall reset or third-party optimizer is run.
 set -euo pipefail
 repo=shmily2-1/V2bX-2
-script_ref=v0.1.0-core-upgrade.8
+script_ref=v0.1.0-core-upgrade.9
 version=$script_ref
 destdir=
 install_dir=
@@ -17,10 +17,10 @@ usage() {
 用法：bash install.sh [v版本标签] [选项]
   --no-deps           不安装缺少的依赖（管理菜单/配置向导需要 python3）
   --install-dir DIR   指定实际程序目录，须与现有服务 ExecStart 一致
-  --non-interactive   不询问是否生成配置，绝不自动启动/重启
+  --non-interactive   只安装程序，不进入节点配置
   --destdir DIR       隔离安装验收，不安装依赖、不执行宿主服务命令
   -h, --help          显示帮助
-默认 v0.1.0-core-upgrade.8，Linux amd64/arm64 + systemd。
+默认 v0.1.0-core-upgrade.9，Linux amd64/arm64 + systemd。
 兼容原项目的 V2bX/v2bx 菜单；不清空防火墙，不覆盖配置/证书/已有服务。
 一键入口仅支持正在运行的 systemd；OpenRC/SysVinit/runit 不支持。
 HELP
@@ -77,10 +77,9 @@ args=("$version" --with-systemd --with-manager)
 if ((no_deps == 0)) && [[ -z $destdir ]]; then args+=(--install-deps); fi
 bash "$tmp/install.sh" "${args[@]}"
 if [[ -z $destdir ]]; then
-  echo '安装完成：运行 v2bx 打开管理菜单，v2bx version 查看三套内核。'
   if ((interactive)) && [[ -t 0 && -t 1 && ! -e /etc/V2bX/config.json ]]; then
-    read -r -p '首次安装，是否现在连接面板、申请证书并启动节点？[y/N] ' answer || answer=n
-    if [[ $answer == [Yy] ]]; then /usr/local/bin/v2bx generate; fi
+    /usr/local/bin/v2bx generate
+  else
+    echo '安装完成，运行 v2bx 打开管理菜单。'
   fi
-  echo '配置验证后可手动运行 v2bx start / v2bx enable；更新后的旧进程请安排 v2bx restart。'
 fi

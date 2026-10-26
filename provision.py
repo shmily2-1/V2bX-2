@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Online Xboard provisioning. No secrets in command arguments or diagnostics."""
 import argparse
+import contextlib
 import copy
 import errno
+import hashlib
+import io
 try:
     import fcntl
 except ImportError:  # Windows can still run the loopback/offline tests.
@@ -511,6 +514,109 @@ def reusable_certificate(existing, node, domain, mode, nodes):
     return None
 
 
+def automatic_certificate(node, info, previous):
+    if not needs_tls(info, effective_protocol(info, node['NodeType'])):
+        return {'CertMode': 'none'}
+    old = (previous or {}).get('CertConfig', {})
+    tls = info.get('tls_settings') or info.get('tlsSettings') or {}
+    if not isinstance(tls, dict):
+        raise ProvisionError('面板TLS配置格式错误')
+    domain = (info.get('server_name') or tls.get('server_name') or info.get('host') or old.get('CertDomain') or '')
+    if not isinstance(domain, str):
+        raise ProvisionError('面板未提供有效证书域名')
+    domain = domain.strip().lower().rstrip('.')
+    if not re.fullmatch(r'(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?', domain):
+        raise ProvisionError('面板未提供有效证书域名，请在面板填写节点域名后重试')
+    try:
+        ipaddress.ip_address(domain)
+    except ValueError:
+        pass
+    else:
+        raise ProvisionError('面板证书域名不能是IP地址，请在面板填写节点域名')
+    if old.get('CertDomain', '').lower().rstrip('.') == domain and old.get('CertMode') in ('http', 'dns', 'file'):
+        # Preflight validates the existing pair. Never abandon a broken/expired
+        # pair for a new directory and silently request another certificate.
+        return copy.deepcopy(old)
+    identity = node['ApiHost'].rstrip('/') + '/' + str(node['NodeID']) + '/' + node['NodeType'] + '/' + domain
+    suffix = hashlib.sha256(identity.encode()).hexdigest()[:12]
+    directory = '/etc/V2bX/certs/node-' + str(node['NodeID']) + '-' + suffix
+    return {'CertMode': 'http', 'CertDomain': domain, 'Email': '',
+            'CertFile': directory + '/fullchain.pem', 'KeyFile': directory + '/privkey.pem'}
+
+
+def quick_wizard(existing=None):
+    """Read exactly four fields, then merge one automatically configured node."""
+    core = cfg.choose('核心', tuple(cfg.PROTOCOLS), 'sing')
+    host = cfg.required('面板地址').rstrip('/')
+    key = cfg.required('面板密钥（不回显）', secret=True)
+    raw_id = cfg.required('节点ID')
+    if not cfg.valid_host(host) or not raw_id.isascii() or not raw_id.isdigit() or not 0 < int(raw_id) <= 2147483647:
+        raise ProvisionError('面板地址或节点ID无效')
+    document = copy.deepcopy(existing) if existing is not None else {'Log': {'Level': 'info'}, 'Cores': [], 'Nodes': []}
+    if existing is not None:
+        cfg.validate(existing)
+    candidates = [n for n in document['Nodes'] if n.get('ApiHost', '').rstrip('/') == host and n.get('NodeID') == int(raw_id)]
+    node = {'Core': core, 'ApiHost': host, 'ApiKey': key, 'NodeID': int(raw_id),
+            'Timeout': 30, 'ListenIP': '0.0.0.0', 'SendIP': '0.0.0.0'}
+    kinds = list(dict.fromkeys([n.get('NodeType') for n in candidates if n.get('NodeType') in TYPES] + list(TYPES)))
+    last_error, info, incompatible = None, None, False
+    for kind in kinds:
+        try:
+            candidate = api_get(node, 'config', kind)
+        except ProvisionError as error:
+            last_error = error
+            continue
+        protocol = effective_protocol(candidate, kind)
+        if protocol not in (kind, 'hysteria2' if kind == 'hysteria' else kind):
+            continue
+        if protocol not in cfg.PROTOCOLS[core]:
+            incompatible = True
+            continue
+        info, node['NodeType'] = candidate, kind
+        break
+    if info is None:
+        if incompatible:
+            raise ProvisionError('面板协议与所选核心不兼容')
+        raise ProvisionError('无法识别节点，请检查面板、密钥和节点ID' + ('；' + str(last_error) if last_error else ''))
+    matches = [n for n in candidates if n.get('NodeType') == node['NodeType']
+               or {n.get('NodeType'), node['NodeType']} == {'hysteria', 'hysteria2'}]
+    if len(matches) > 1:
+        raise ProvisionError('已有配置包含重复节点，请先修复重复项')
+    previous = matches[0] if matches else None
+    if previous is not None:
+        merged = copy.deepcopy(previous)
+        # Keep existing tuning and addresses, including custom core options.
+        merged.update({k: node[k] for k in ('Core', 'ApiHost', 'ApiKey', 'NodeID', 'NodeType')})
+        node = merged
+    node['CertConfig'] = automatic_certificate(node, info, previous)
+    if previous is None:
+        document['Nodes'].append(node)
+    else:
+        document['Nodes'][document['Nodes'].index(previous)] = node
+    if not any(c.get('Type') == core for c in document['Cores']):
+        document['Cores'].append({'Type': core, 'Log': {'Level': 'info'}})
+    cfg.validate(document)
+    return document
+
+
+def quick_deploy(path, document, expected, args):
+    print('正在检查节点配置…' if args.check_only else '正在自动配置并启动节点…')
+    # Suppress repeated confirmations/advice, never exceptions or rollback errors.
+    # No secret is written to an installation log by this in-memory capture.
+    with contextlib.redirect_stdout(io.StringIO()):
+        checks = preflight(document, args.public_ip, True, True, allow_busy_http=True)
+        lease = HTTPPortLease.prepare(checks, cfg.ask, release=True, kill=args.kill_http_port,
+                                      interactive=False, check_only=args.check_only)
+        if not args.check_only:
+            deploy(path, document, checks, expected, args.timeout, not args.no_enable, lease)
+    if args.check_only:
+        print('配置检查通过。')
+    elif any(not check['users'] for check in checks):
+        print('节点已启动，等待面板分配用户。')
+    else:
+        print('配置完成，节点已启动。')
+
+
 def wizard(existing=None):
     print('在线配置：真实验证面板，申请证书，启动并检查服务；不会创建面板用户。')
     nodes, cores, insecure_panel = [], {}, False
@@ -596,6 +702,7 @@ def main():
     parser.add_argument('--yes', action='store_true', help='确认停服务/替换/证书条款/启动')
     parser.add_argument('--no-enable', action='store_true')
     parser.add_argument('--check-only', action='store_true')
+    parser.add_argument('--advanced', action='store_true', help='使用完整协议/证书/多节点配置向导')
     parser.add_argument('--timeout', type=int, default=240)
     args = parser.parse_args()
     if os.name != 'posix' or fcntl is None or os.geteuid() != 0 or not Path('/run/systemd/system').is_dir():
@@ -629,7 +736,12 @@ def main():
                 subprocess.run(shlex.split(args.edit) + [str(draft)], check=True)
                 document = cfg.read_document(draft)
         else:
-            document, wizard_insecure = wizard(cfg.read_document(path) if expected is not None else None)
+            existing = cfg.read_document(path) if expected is not None else None
+            if not args.advanced:
+                document = quick_wizard(existing)
+                quick_deploy(path, document, expected, args)
+                return
+            document, wizard_insecure = wizard(existing)
         allow_http = confirm_http_panel(document, args.allow_insecure_panel or wizard_insecure,
                                         not (args.yes or args.check_only))
         checks = preflight(document, args.public_ip, args.allow_empty, allow_http, allow_busy_http=True)
