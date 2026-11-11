@@ -180,7 +180,6 @@ def open_ports():
             raise RuntimeError(manager + '正在管理规则，请在其管理界面操作；不绕过或关闭防火墙管理器')
     if shutil.which('ufw') and 'Status: active' in run('ufw', 'status', check=False).stdout:
         raise RuntimeError('UFW处于启用状态，请先通过UFW审查规则；不会关闭UFW')
-    directory = backup_dir()
     tag = 'v2bx-open-' + uuid.uuid4().hex[:12]
     state = {'tag': tag, 'rules': []}
     if shutil.which('nft'):
@@ -218,6 +217,10 @@ def open_ports():
                     state['rules'].append([tool, ['-p', protocol, '-m', 'comment', '--comment', tag, '-j', 'ACCEPT']])
     else:
         raise RuntimeError('没有nft/iptables，无法核验放行情况')
+    # Do not touch the host backup tree until the firewall backend has been
+    # detected and all preflight checks have passed. This keeps read-only
+    # capability checks usable by an unprivileged test process.
+    directory = backup_dir()
     statefile = directory / 'rollback.json'
     statefile.write_text(json.dumps(state))
     statefile.chmod(0o600)
