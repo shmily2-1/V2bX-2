@@ -66,6 +66,19 @@ def valid_host(value):
             and not parsed.fragment and not any(c.isspace() for c in value))
 
 
+def valid_masquerade_url(value):
+    if not isinstance(value, str) or not value or any(c.isspace() for c in value):
+        return False
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+    except ValueError:
+        return False
+    return (parsed.scheme in ('http', 'https') and bool(parsed.hostname)
+            and (port is None or 1 <= port <= 65535)
+            and not parsed.username and not parsed.password and not parsed.fragment)
+
+
 def validate(document):
     """Structural check only; not an assertion of core/panel/certificate validity."""
     if not isinstance(document, dict):
@@ -107,6 +120,11 @@ def validate(document):
         if cert.get('CertMode') in ('file', 'self'):
             if not cert.get('CertFile') or not cert.get('KeyFile'):
                 raise ValueError('文件证书模式需 CertFile/KeyFile')
+        masquerade_url = options.get('Hysteria2MasqueradeURL', '')
+        if masquerade_url and (options.get('Core') != 'sing'
+                               or api.get('NodeType') not in ('hysteria', 'hysteria2')
+                               or not valid_masquerade_url(masquerade_url)):
+            raise ValueError('Hysteria2伪装站点地址仅支持sing的Hysteria2节点和有效http(s) URL')
     return len(nodes)
 
 
@@ -176,6 +194,11 @@ def generate_document():
             panel = choose('Hysteria2 面板 API', ('xboard', 'hysteria2'), 'xboard')
             node_type = 'hysteria' if panel == 'xboard' else 'hysteria2'
             print('Xboard 需设置 version=2，跳跃范围由面板下发；不要把公网范围写为监听端口。')
+        masquerade_url = ''
+        if core == 'sing' and protocol == 'hysteria2':
+            masquerade_url = ask('Hysteria2伪装站点地址（HTTP(S)，可空关闭）', '')
+            if masquerade_url and not valid_masquerade_url(masquerade_url):
+                raise ValueError('伪装站点地址必须是有效的http(s) URL，且不能包含账号、密码或片段')
         listen = ask('监听 IP', '0.0.0.0')
         send = ask('出站 IP', '0.0.0.0')
         ipaddress.ip_address(listen)
@@ -188,6 +211,8 @@ def generate_document():
         }
         if core == 'sing':
             node.update(EnableTFO=False, EnableSniff=True)
+            if masquerade_url:
+                node['Hysteria2MasqueradeURL'] = masquerade_url
         if core == 'xray':
             node.update(EnableTFO=False, EnableDNS=False)
         cores[core] = {'Type': core, 'Log': {'Level': 'info' if core != 'xray' else 'warning'}}

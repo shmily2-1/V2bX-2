@@ -1,3 +1,13 @@
+# v0.1.0-core-upgrade.12：sing Hysteria2 伪装站点地址
+
+sing 核心的 Hysteria2 一键配置现在可以选择设置 HTTP(S) 伪装站点地址，并将其写入 sing-box `masquerade` 反向代理配置。留空时关闭新设置或保留已有值；输入 `-` 可清除现有地址。此项不改变 TLS 证书域名。
+
+~~~bash
+wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/main/install.sh && bash install.sh
+~~~
+
+---
+
 # v0.1.0-core-upgrade.11：修复 GitHub Actions 非 root 安装器回归
 
 这是 prerelease / 验收版。修复系统工具在无 root 的 CI 回归测试中提前创建 `/var/backups/V2bX-2` 导致的失败；防火墙后端检查通过后才创建备份目录。

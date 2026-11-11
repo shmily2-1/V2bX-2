@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 import zipfile
@@ -16,6 +17,8 @@ HELPER = ROOT / 'scripts/install.sh'
 MANAGEMENT = ROOT / 'V2bX.sh'
 INITCONFIG = ROOT / 'initconfig.sh'
 CONFIGURE = ROOT / 'configure.py'
+sys.path.insert(0, str(ROOT))
+import configure as configure_module
 BINARY = b'#!/usr/bin/env bash\n[[ ${1:-} == version ]] || exit 99\necho "fixture V2bX"\n'
 SAMPLE = b'{"NodeType":"hysteria","version":2}\n'
 RUNTIME_ASSETS = ('geoip.dat', 'geosite.dat', 'geoip.db', 'geosite.db',
@@ -159,6 +162,8 @@ sys.stdout.buffer.write(zipfile.ZipFile(archive).read(member))
             answers += [protocol]
         if protocol == 'hysteria2' or core == 'hysteria2':
             answers += ['xboard']
+        if core == 'sing' and protocol == 'hysteria2':
+            answers += ['']  # optional Hysteria2 masquerade proxy URL
         answers += ['', '']  # IPv4 defaults
         if protocol in ('hysteria', 'hysteria2', 'trojan', 'tuic', 'anytls') or core == 'hysteria2':
             answers += ['file', 'node.test.invalid', '', '']
@@ -196,6 +201,25 @@ sys.stdout.buffer.write(zipfile.ZipFile(archive).read(member))
         node = json.loads((self.base / 'config/config.json').read_text())['Nodes'][0]
         self.assertEqual(node['Core'], 'sing')
         self.assertEqual(node['NodeType'], 'hysteria')
+
+    def test_sing_hysteria2_configures_masquerade_url(self):
+        answers = self.node_answers(protocol='hysteria2')
+        # The optional URL follows panel/core selection and precedes listen/send IP.
+        answers[6] = 'https://www.example.test/landing'
+        self.run_wizard(answers + ['n'])
+        node = json.loads((self.base / 'config/config.json').read_text())['Nodes'][0]
+        self.assertEqual(node['Hysteria2MasqueradeURL'], 'https://www.example.test/landing')
+
+    def test_masquerade_url_rejected_for_non_sing_hysteria2(self):
+        document = {
+            'Cores': [{'Type': 'xray'}],
+            'Nodes': [{
+                'Core': 'xray', 'ApiHost': 'https://panel.example.test', 'ApiKey': 'test-key',
+                'NodeID': 1, 'NodeType': 'vless', 'Hysteria2MasqueradeURL': 'https://www.example.test',
+            }],
+        }
+        with self.assertRaisesRegex(ValueError, '伪装站点地址'):
+            configure_module.validate(document)
 
     def test_invalid_overwrite_input_leaves_bytes_unchanged(self):
         self.run_wizard(self.node_answers() + ['n'])

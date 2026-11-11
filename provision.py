@@ -582,6 +582,15 @@ def quick_wizard(existing=None):
         # Keep existing tuning and addresses, including custom core options.
         merged.update({k: node[k] for k in ('Core', 'ApiHost', 'ApiKey', 'NodeID', 'NodeType')})
         node = merged
+    if core == 'sing' and protocol == 'hysteria2':
+        current_masquerade = node.get('Hysteria2MasqueradeURL', '')
+        masquerade_url = cfg.ask('Hysteria2伪装站点地址（HTTP(S)，输入 - 关闭）', current_masquerade or None)
+        if masquerade_url == '-':
+            node.pop('Hysteria2MasqueradeURL', None)
+        elif masquerade_url:
+            if not cfg.valid_masquerade_url(masquerade_url):
+                raise ProvisionError('伪装站点地址必须是有效的http(s) URL，且不能包含账号、密码或片段')
+            node['Hysteria2MasqueradeURL'] = masquerade_url
     node['CertConfig'] = automatic_certificate(node, info, previous)
     if previous is None:
         document['Nodes'].append(node)
@@ -641,6 +650,19 @@ def wizard(existing=None):
             raise ProvisionError('无法识别节点，请核对密钥、节点ID与面板协议')
         protocol = effective_protocol(info, node['NodeType'])
         print('识别到协议：' + protocol)
+        if core == 'sing' and protocol == 'hysteria2':
+            old = next((item for item in (existing or {}).get('Nodes', [])
+                        if item.get('ApiHost', '').rstrip('/') == node['ApiHost']
+                        and item.get('NodeID') == node['NodeID']
+                        and item.get('NodeType') in ('hysteria', 'hysteria2')), {})
+            old_url = old.get('Hysteria2MasqueradeURL', '')
+            masquerade_url = cfg.ask('Hysteria2伪装站点地址（HTTP(S)，输入 - 关闭）', old_url or None)
+            if masquerade_url == '-':
+                node.pop('Hysteria2MasqueradeURL', None)
+            elif masquerade_url:
+                if not cfg.valid_masquerade_url(masquerade_url):
+                    raise ProvisionError('伪装站点地址必须是有效的http(s) URL，且不能包含账号、密码或片段')
+                node['Hysteria2MasqueradeURL'] = masquerade_url
         if needs_tls(info, protocol):
             domain = cfg.ask('证书域名', info.get('server_name') or info.get('host') or '')
             mode = cfg.choose('证书方式', ('http', 'dns', 'file'), 'http')

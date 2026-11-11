@@ -384,12 +384,30 @@ func getInboundOptions(tag string, info *panel.NodeInfo, c *conf.Options) (optio
 				Password: info.Hysteria2.ObfsType,
 			}
 		}
+		var masquerade *option.Hysteria2Masquerade
+		if masqueradeURL := strings.TrimSpace(c.SingOptions.Hysteria2MasqueradeURL); masqueradeURL != "" {
+			parsed, err := url.Parse(masqueradeURL)
+			if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" || parsed.User != nil || parsed.Fragment != "" {
+				return option.Inbound{}, fmt.Errorf("invalid Hysteria2 masquerade URL; use an http(s) URL without credentials or fragment")
+			}
+			if parsed.Port() != "" {
+				port, err := strconv.Atoi(parsed.Port())
+				if err != nil || port < 1 || port > 65535 {
+					return option.Inbound{}, fmt.Errorf("invalid Hysteria2 masquerade URL port")
+				}
+			}
+			masquerade = &option.Hysteria2Masquerade{
+				Type:         "proxy",
+				ProxyOptions: option.Hysteria2MasqueradeProxy{URL: masqueradeURL},
+			}
+		}
 		in.Options = &option.Hysteria2InboundOptions{
 			ListenOptions:         listen,
 			UpMbps:                info.Hysteria2.UpMbps,
 			DownMbps:              info.Hysteria2.DownMbps,
 			IgnoreClientBandwidth: info.Hysteria2.Ignore_Client_Bandwidth,
 			Obfs:                  obfs,
+			Masquerade:            masquerade,
 			InboundTLSOptionsContainer: option.InboundTLSOptionsContainer{
 				TLS: &tls,
 			},

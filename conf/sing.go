@@ -36,6 +36,7 @@ type SingOptions struct {
 	SniffEnabled             bool                   `json:"EnableSniff"`
 	SniffOverrideDestination bool                   `json:"SniffOverrideDestination"`
 	EnableDNS                bool                   `json:"EnableDNS"`
+	Hysteria2MasqueradeURL   string                 `json:"Hysteria2MasqueradeURL,omitempty"`
 	DomainStrategy           option.DomainStrategy  `json:"DomainStrategy"`
 	FallBackConfigs          *FallBackConfigForSing `json:"FallBackConfigs"`
 	Multiplex                *MultiplexConfig       `json:"MultiplexConfig"`

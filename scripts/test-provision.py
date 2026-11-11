@@ -120,13 +120,24 @@ class ProvisionTests(unittest.TestCase):
     def test_quick_hysteria2_reads_domain_and_defaults_to_http_without_more_input(self):
         self.info = {'protocol': 'hysteria', 'version': 2, 'server_port': 15000,
                      'server_name': 'p-jp4.example.test', 'ports': '10000-60000'}
-        with patch('builtins.input', side_effect=self.quick_answers(node_id='150')) as ask:
+        with patch('builtins.input', side_effect=self.quick_answers(node_id='150') + ['']) as ask:
             document = p.quick_wizard()
         cert = document['Nodes'][0]['CertConfig']
-        self.assertEqual(ask.call_count, 4)
+        self.assertEqual(ask.call_count, 5)
         self.assertEqual((cert['CertMode'], cert['CertDomain'], cert['Email']),
                          ('http', 'p-jp4.example.test', ''))
         self.assertTrue(cert['CertFile'].startswith('/etc/V2bX/certs/node-150-'))
+
+    def test_quick_hysteria2_sets_and_clears_sing_masquerade_url(self):
+        self.info = {'protocol': 'hysteria', 'version': 2, 'server_port': 15000,
+                     'server_name': 'p-jp4.example.test', 'ports': '10000-60000'}
+        with patch('builtins.input', side_effect=self.quick_answers(node_id='150') + ['https://www.example.test']):
+            document = p.quick_wizard()
+        self.assertEqual(document['Nodes'][0]['Hysteria2MasqueradeURL'], 'https://www.example.test')
+        previous = document
+        with patch('builtins.input', side_effect=self.quick_answers(node_id='150') + ['-']):
+            cleared = p.quick_wizard(previous)
+        self.assertNotIn('Hysteria2MasqueradeURL', cleared['Nodes'][0])
 
     def test_quick_reality_does_not_create_public_certificate(self):
         self.info.update(tls=2)
