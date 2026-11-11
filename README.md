@@ -53,7 +53,7 @@ go build -trimpath -tags "$TAGS" -ldflags '-s -w' -o V2bX .
 
 ### Linux 一键安装（兼容原 V2bX 命令）
 
-支持 **amd64 / arm64**，目标是常见 Debian / Ubuntu / RHEL 系 **systemd** 服务器；一键入口不会在 OpenRC、SysVinit、runit 或未运行 systemd 的容器中继续安装。先备份现有配置并阅读 [升级说明](docs/UPGRADE.md)。当前固定安装 `v0.1.0-core-upgrade.10` **验收版 / prerelease**，内核按官方预发布版本更新。
+支持 **amd64 / arm64**，目标是常见 Debian / Ubuntu / RHEL 系 **systemd** 服务器；一键入口不会在 OpenRC、SysVinit、runit 或未运行 systemd 的容器中继续安装。先备份现有配置并阅读 [升级说明](docs/UPGRADE.md)。当前固定安装 `v0.1.0-core-upgrade.11` **验收版 / prerelease**，内核按官方预发布版本更新。
 
 与原项目命令格式一致：
 
@@ -66,7 +66,7 @@ wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/main/install.sh && ba
 生产环境建议固定已验收标签，避免 `main` 变化：
 
 ```bash
-wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/v0.1.0-core-upgrade.10/install.sh && bash install.sh
+wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/v0.1.0-core-upgrade.11/install.sh && bash install.sh
 ```
 
 - 从本仓库 Release 下载对应架构，校验 SHA256，原子替换程序并备份旧文件。下载/校验失败不会安装。

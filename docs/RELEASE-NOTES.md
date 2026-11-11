@@ -1,3 +1,15 @@
+# v0.1.0-core-upgrade.11：修复 GitHub Actions 非 root 安装器回归
+
+这是 prerelease / 验收版。修复系统工具在无 root 的 CI 回归测试中提前创建 `/var/backups/V2bX-2` 导致的失败；防火墙后端检查通过后才创建备份目录。
+
+## 使用
+
+~~~bash
+wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/main/install.sh && bash install.sh
+~~~
+
+---
+
 # v0.1.0-core-upgrade.10：预发布内核更新与无二次确认安装流程
 
 这是 prerelease / 验收版。节点内核更新至 Xray 26.11.9、sing-box 1.15.0-alpha.13、Hysteria 2 2.13.0；安装与管理脚本更新为免二次确认流程。
