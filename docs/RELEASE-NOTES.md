@@ -1,3 +1,13 @@
+# v0.1.0-core-upgrade.13：默认一键配置支持多节点
+
+默认配置向导现在可在一次流程中连续填写多个节点；每个节点完成面板识别及证书准备后询问是否继续（Y/N），选择 N 后统一校验、写入并部署整批节点，同时保留现有节点和核心配置。
+
+~~~bash
+wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/main/install.sh && bash install.sh
+~~~
+
+---
+
 # v0.1.0-core-upgrade.12：sing Hysteria2 伪装站点地址
 
 sing 核心的 Hysteria2 一键配置现在可以选择设置 HTTP(S) 伪装站点地址，并将其写入 sing-box `masquerade` 反向代理配置。留空时关闭新设置或保留已有值；输入 `-` 可清除现有地址。此项不改变 TLS 证书域名。

@@ -2,7 +2,7 @@
 # Original-style V2bX management menu, adapted from wyx2685/V2bX-script (MPL-2.0).
 # Installed as /usr/bin/V2bX and /usr/local/bin/v2bx. No upstream downloads.
 set -euo pipefail
-script_ref=v0.1.0-core-upgrade.12
+script_ref=v0.1.0-core-upgrade.13
 root=
 if [[ ${1:-} == --root ]]; then
   [[ $# -ge 3 && $2 =~ ^/[a-zA-Z0-9_./-]+$ ]] || { echo 'Invalid --root' >&2; exit 2; }
@@ -242,7 +242,7 @@ help_text() {
   cat <<'HELP'
 V2bX-2 管理命令（兼容原项目，v2bx 始终指向菜单）：
   v2bx                       显示原风格菜单
-  v2bx install [v版本]       安装后填写四项信息并自动配置启动
+  v2bx install [v版本]       安装后可连续配置多个节点并自动部署
   v2bx update [v版本]        仅更新程序及菜单，不重新配置/启动
   v2bx update_shell [v版本]   从同一 Release 重装/升级程序及管理组件
   v2bx config|generate       在线预检、证书申请、备份配置并启动验证

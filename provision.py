@@ -539,16 +539,26 @@ def automatic_certificate(node, info, previous):
 
 
 def quick_wizard(existing=None):
-    """Read exactly four fields, then merge one automatically configured node."""
-    core = cfg.choose('核心', tuple(cfg.PROTOCOLS), 'sing')
+    """Collect and verify one or more nodes before writing/deploying the document."""
+    document = copy.deepcopy(existing) if existing is not None else {'Log': {'Level': 'info'}, 'Cores': [], 'Nodes': []}
+    if existing is not None:
+        cfg.validate(existing)
+    while True:
+        core = cfg.choose('核心', tuple(cfg.PROTOCOLS), 'sing')
+        quick_add_node(document, core)
+        if cfg.choose('是否继续添加节点？', ('y', 'n'), 'n') == 'n':
+            break
+    cfg.validate(document)
+    return document
+
+
+def quick_add_node(document, core):
+    """Read one node's fields, probe its panel, and merge it into document."""
     host = cfg.required('面板地址').rstrip('/')
     key = cfg.required('面板密钥（不回显）', secret=True)
     raw_id = cfg.required('节点ID')
     if not cfg.valid_host(host) or not raw_id.isascii() or not raw_id.isdigit() or not 0 < int(raw_id) <= 2147483647:
         raise ProvisionError('面板地址或节点ID无效')
-    document = copy.deepcopy(existing) if existing is not None else {'Log': {'Level': 'info'}, 'Cores': [], 'Nodes': []}
-    if existing is not None:
-        cfg.validate(existing)
     candidates = [n for n in document['Nodes'] if n.get('ApiHost', '').rstrip('/') == host and n.get('NodeID') == int(raw_id)]
     node = {'Core': core, 'ApiHost': host, 'ApiKey': key, 'NodeID': int(raw_id),
             'Timeout': 30, 'ListenIP': '0.0.0.0', 'SendIP': '0.0.0.0'}
@@ -598,8 +608,6 @@ def quick_wizard(existing=None):
         document['Nodes'][document['Nodes'].index(previous)] = node
     if not any(c.get('Type') == core for c in document['Cores']):
         document['Cores'].append({'Type': core, 'Log': {'Level': 'info'}})
-    cfg.validate(document)
-    return document
 
 
 def quick_deploy(path, document, expected, args):

@@ -107,23 +107,52 @@ class ProvisionTests(unittest.TestCase):
         return [core, self.node['ApiHost'], self.node['ApiKey'], node_id]
 
     def test_quick_wizard_asks_only_four_fields_and_probes_matching_protocol(self):
-        with patch('builtins.input', side_effect=self.quick_answers()) as ask:
+        with patch('builtins.input', side_effect=self.quick_answers() + ['N']) as ask:
             document = p.quick_wizard()
-        self.assertEqual(ask.call_count, 4)
+        self.assertEqual(ask.call_count, 5)
         self.assertEqual([c.args[0].split(': ')[0] for c in ask.call_args_list],
-                         ['核心 (xray/sing/hysteria2) [sing]', '面板地址', '面板密钥（不回显）', '节点ID'])
+                         ['核心 (xray/sing/hysteria2) [sing]', '面板地址', '面板密钥（不回显）', '节点ID',
+                          '是否继续添加节点？ (Y/N) [N]'])
         node = document['Nodes'][0]
         self.assertEqual((node['Core'], node['NodeType'], node['NodeID']), ('sing', 'vless', 1))
         self.assertEqual(node['CertConfig'], {'CertMode': 'none'})
         self.assertEqual([q['node_type'][0] for q in self.requests], ['hysteria', 'vless'])
 
+    def test_quick_wizard_adds_multiple_nodes_in_one_deployment_document(self):
+        answers = self.quick_answers(node_id='1') + ['Y'] + self.quick_answers(core='xray', node_id='2') + ['N']
+        with patch('builtins.input', side_effect=answers) as ask:
+            document = p.quick_wizard()
+        self.assertEqual(ask.call_count, 10)
+        self.assertEqual([node['NodeID'] for node in document['Nodes']], [1, 2])
+        self.assertEqual([node['Core'] for node in document['Nodes']], ['sing', 'xray'])
+        self.assertEqual([core['Type'] for core in document['Cores']], ['sing', 'xray'])
+        self.assertEqual([query['node_id'][0] for query in self.requests], ['1', '1', '2', '2'])
+
+    def test_quick_wizard_can_add_nodes_to_existing_document(self):
+        answers = self.quick_answers(core='xray', node_id='2') + ['N']
+        with patch('builtins.input', side_effect=answers):
+            document = p.quick_wizard(self.document)
+        self.assertEqual([node['NodeID'] for node in document['Nodes']], [1, 2])
+        self.assertEqual(document['Nodes'][0], self.node)
+        self.assertEqual([core['Type'] for core in document['Cores']], ['sing', 'xray'])
+
+    def test_quick_deploy_preflights_and_deploys_all_nodes_together(self):
+        answers = self.quick_answers(node_id='1') + ['Y'] + self.quick_answers(node_id='2') + ['N']
+        with patch('builtins.input', side_effect=answers):
+            document = p.quick_wizard()
+        args = SimpleNamespace(public_ip=None, timeout=30, no_enable=False, kill_http_port=False, check_only=False)
+        with patch.object(p, 'deploy') as deploy, contextlib.redirect_stdout(io.StringIO()):
+            p.quick_deploy(self.base/'config.json', document, None, args)
+        self.assertEqual(len(deploy.call_args.args[1]['Nodes']), 2)
+        self.assertEqual(len(deploy.call_args.args[2]), 2)
+
     def test_quick_hysteria2_reads_domain_and_defaults_to_http_without_more_input(self):
         self.info = {'protocol': 'hysteria', 'version': 2, 'server_port': 15000,
                      'server_name': 'p-jp4.example.test', 'ports': '10000-60000'}
-        with patch('builtins.input', side_effect=self.quick_answers(node_id='150') + ['']) as ask:
+        with patch('builtins.input', side_effect=self.quick_answers(node_id='150') + ['', 'N']) as ask:
             document = p.quick_wizard()
         cert = document['Nodes'][0]['CertConfig']
-        self.assertEqual(ask.call_count, 5)
+        self.assertEqual(ask.call_count, 6)
         self.assertEqual((cert['CertMode'], cert['CertDomain'], cert['Email']),
                          ('http', 'p-jp4.example.test', ''))
         self.assertTrue(cert['CertFile'].startswith('/etc/V2bX/certs/node-150-'))
@@ -131,23 +160,23 @@ class ProvisionTests(unittest.TestCase):
     def test_quick_hysteria2_sets_and_clears_sing_masquerade_url(self):
         self.info = {'protocol': 'hysteria', 'version': 2, 'server_port': 15000,
                      'server_name': 'p-jp4.example.test', 'ports': '10000-60000'}
-        with patch('builtins.input', side_effect=self.quick_answers(node_id='150') + ['https://www.example.test']):
+        with patch('builtins.input', side_effect=self.quick_answers(node_id='150') + ['https://www.example.test', 'N']):
             document = p.quick_wizard()
         self.assertEqual(document['Nodes'][0]['Hysteria2MasqueradeURL'], 'https://www.example.test')
         previous = document
-        with patch('builtins.input', side_effect=self.quick_answers(node_id='150') + ['-']):
+        with patch('builtins.input', side_effect=self.quick_answers(node_id='150') + ['-', 'N']):
             cleared = p.quick_wizard(previous)
         self.assertNotIn('Hysteria2MasqueradeURL', cleared['Nodes'][0])
 
     def test_quick_reality_does_not_create_public_certificate(self):
         self.info.update(tls=2)
-        with patch('builtins.input', side_effect=self.quick_answers()):
+        with patch('builtins.input', side_effect=self.quick_answers() + ['N']):
             document = p.quick_wizard()
         self.assertEqual(document['Nodes'][0]['CertConfig'], {'CertMode': 'none'})
 
     def test_quick_tls_domain_uses_nested_settings(self):
         self.info.update(tls=1, tls_settings={'server_name': 'tls.example.test'})
-        with patch('builtins.input', side_effect=self.quick_answers()):
+        with patch('builtins.input', side_effect=self.quick_answers() + ['N']):
             document = p.quick_wizard()
         self.assertEqual(document['Nodes'][0]['CertConfig']['CertDomain'], 'tls.example.test')
 
@@ -169,13 +198,13 @@ class ProvisionTests(unittest.TestCase):
         self.document['Nodes'].append(other)
         self.document['CustomRoot'] = {'retained': True}
         original = copy.deepcopy(self.document)
-        with patch('builtins.input', side_effect=self.quick_answers()):
+        with patch('builtins.input', side_effect=self.quick_answers() + ['N']):
             document = p.quick_wizard(self.document)
         self.assertEqual(document, original)
         self.assertEqual(self.document, original)
 
     def test_quick_adds_new_node_without_deleting_old_node_or_core(self):
-        with patch('builtins.input', side_effect=self.quick_answers(core='xray', node_id='2')):
+        with patch('builtins.input', side_effect=self.quick_answers(core='xray', node_id='2') + ['N']):
             document = p.quick_wizard(self.document)
         self.assertEqual(document['Nodes'][0], self.node)
         self.assertEqual([n['NodeID'] for n in document['Nodes']], [1, 2])
@@ -183,7 +212,7 @@ class ProvisionTests(unittest.TestCase):
 
     def test_quick_certificate_paths_distinguish_panels_with_same_node_id(self):
         self.info.update(tls=1, server_name='tls.example.test')
-        with patch('builtins.input', side_effect=self.quick_answers()):
+        with patch('builtins.input', side_effect=self.quick_answers() + ['N']):
             first = p.quick_wizard()['Nodes'][0]
         second = dict(first, ApiHost='https://another.example.test')
         cert = p.automatic_certificate(second, self.info, None)

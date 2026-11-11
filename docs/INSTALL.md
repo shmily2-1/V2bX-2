@@ -3,7 +3,7 @@
 ## 适用范围
 
 - Linux amd64 / arm64，使用 Bash；一键入口只支持正在运行的 systemd。OpenRC、SysVinit、runit 和未运行 systemd 的容器会在下载前被拒绝。
-- 当前默认：`v0.1.0-core-upgrade.12`，明确为验收版 / prerelease。固定标签使脚本和下载版本对应，不使用会排除 prerelease 的 GitHub `/releases/latest`。
+- 当前默认：`v0.1.0-core-upgrade.13`，明确为验收版 / prerelease。固定标签使脚本和下载版本对应，不使用会排除 prerelease 的 GitHub `/releases/latest`。
 - 从根 README 复制一键命令，以 root 执行。命令先完整下载到随机临时文件，成功后才执行，不使用 `curl | bash`。执行远程脚本前应人工查看内容。
 - 初始下载需要 curl 和 CA 证书。Debian/Ubuntu 可先运行 `apt-get update && apt-get install -y curl ca-certificates`；RHEL 系使用对应的 dnf/yum。
 - 脚本可用 `--install-deps` 补齐 curl、unzip、coreutils、util-linux 所提供的工具；不会整机升级。其它发行版自行安装依赖。
@@ -18,10 +18,10 @@ wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/main/install.sh && ba
 固定版本安装：
 
 ```bash
-wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/v0.1.0-core-upgrade.12/install.sh && bash install.sh
+wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/v0.1.0-core-upgrade.13/install.sh && bash install.sh
 ```
 
-如需把版本参数也显式写入审计记录，可在查看脚本后执行 `bash install.sh v0.1.0-core-upgrade.12`；该标签脚本默认值已经固定为同一版本。
+如需把版本参数也显式写入审计记录，可在查看脚本后执行 `bash install.sh v0.1.0-core-upgrade.13`；该标签脚本默认值已经固定为同一版本。
 
 ## 可审核的分步安装
 
@@ -29,7 +29,7 @@ wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/v0.1.0-core-upgrade.1
 
 ```bash
 less install.sh
-bash install.sh v0.1.0-core-upgrade.12 --non-interactive
+bash install.sh v0.1.0-core-upgrade.13 --non-interactive
 ```
 
 下载文件名 `V2bX-linux-amd64.zip` 或 `V2bX-linux-arm64.zip`，使用同一 Release 的 `.zip.sha256` 校验。只从 HTTPS GitHub 下载，不回退到未知镜像。SHA256 能检测损坏/不匹配，不是独立于 GitHub 仓库的签名。标签、脚本和 Release 都属于同一信任边界。
@@ -42,11 +42,11 @@ bash install.sh v0.1.0-core-upgrade.12 --non-interactive
 - `/etc/V2bX/config.json.example`（权限 0600，Hysteria2 + Xboard 示例，不覆盖已有同名文件）；
 - `/usr/bin/V2bX` 和 `/usr/local/bin/v2bx`（管理菜单，兼容 `start/stop/restart/status/enable/disable/log/update/generate/config/version/x25519/uninstall/ports`）；
 - `/usr/local/lib/V2bX-2/`（与已校验 ZIP 同源的管理脚本和运行时资源）；
-- 安装器只安装程序；交互首次安装随后直接进入四项自动配置，`--non-interactive`仅安装。
+- 安装器只安装程序；交互首次安装随后进入逐节点配置指引，`--non-interactive`仅安装。
 
-新节点运行 `v2bx generate`，填写核心、面板地址、面板密钥和节点ID。若选择 `sing` 且识别为 Hysteria2，可选填写伪装站点 HTTP(S) URL；其他节点仍只需四项。后续自动读取域名/端口/用户、复用或申请HTTP证书；不再选择协议、域名、证书方式或邮箱。已有DNS/file证书配置保持使用。
+新节点运行 `v2bx generate`，每个节点填写核心、面板地址、面板密钥和节点ID，随后用 Y/N 选择是否添加下一个。全部节点统一验证、写入、申请或复用证书并部署。若某节点选择 `sing` 且识别为 Hysteria2，可选填写伪装站点 HTTP(S) URL；其他节点仍只需四项。后续自动读取域名/端口/用户；不再选择协议、域名、证书方式或邮箱。已有DNS/file证书配置保持使用。
 
-填写四项后自动备份/合并配置、申请或复用证书、启动并默认设置自启，不再输入DEPLOY。保留实际错误与失败回滚；需要完整交互式配置时使用 `v2bx generate --advanced`。检查命令：
+全部节点填写完成后自动备份/合并配置、申请或复用证书、启动并默认设置自启，不再输入DEPLOY。保留实际错误与失败回滚；需要完整交互式配置时使用 `v2bx generate --advanced`。检查命令：
 
 
 ```bash
@@ -63,7 +63,7 @@ OpenRC、SysVinit、runit 和未运行 systemd 的容器不在本一键入口支
 
 ## 更新与回滚
 
-菜单1 / v2bx install 会先安装，再进入四项自动指引。菜单2 / v2bx update 只更新，不覆盖配置或自动重启。默认指引一次配置一个节点并保留其他节点，再次运行可添加下一个；原多节点Y/N整套生成向导保留在 `--advanced`。
+菜单1 / v2bx install 会先安装，再进入节点自动指引。菜单2 / v2bx update 只更新，不覆盖配置或自动重启。默认指引支持一次连续配置多个节点，并保留原配置中的其他节点；原完整配置向导仍可用 `--advanced`。
 
 菜单3默认直接彻底卸载，删除本项目配置、证书/ACME账户及备份；保留数据使用v2bx uninstall --keep-config。共享证书目标不会随符号链接追删，路径/挂载/自定义服务异常时拒绝操作。证书彻底删除后重装会重新申请，请避免反复签发触发CA限流。
 
@@ -75,7 +75,7 @@ OpenRC、SysVinit、runit 和未运行 systemd 的容器不在本一键入口支
 4. **运行中的老进程不会自动切换**。在维护窗口人工执行 `systemctl restart V2bX`，检查日志、用户、流量及真实客户端。
 5. 若失败，先停止节点，将明确选定的备份复制为同目录临时文件，再原子替换实际 `ExecStart` 程序，恢复必要配置后启动。不要盲目选择通配符匹配出的「最后一个」备份。
 
-仅装程序：`sudo bash install.sh v0.1.0-core-upgrade.12`。另一个版本只有其 Release 和对应架构资产实际存在时才可指定。`V2bX update` 使用本地已校验适配安装器，不会运行 wyx2685 原版安装器；以后继续使用本仓库的一键命令或本地管理命令更新。
+仅装程序：`sudo bash install.sh v0.1.0-core-upgrade.13`。另一个版本只有其 Release 和对应架构资产实际存在时才可指定。`V2bX update` 使用本地已校验适配安装器，不会运行 wyx2685 原版安装器；以后继续使用本仓库的一键命令或本地管理命令更新。
 
 ## Hysteria2 端口跳跃
 

@@ -53,7 +53,7 @@ go build -trimpath -tags "$TAGS" -ldflags '-s -w' -o V2bX .
 
 ### Linux 一键安装（兼容原 V2bX 命令）
 
-支持 **amd64 / arm64**，目标是常见 Debian / Ubuntu / RHEL 系 **systemd** 服务器；一键入口不会在 OpenRC、SysVinit、runit 或未运行 systemd 的容器中继续安装。先备份现有配置并阅读 [升级说明](docs/UPGRADE.md)。当前固定安装 `v0.1.0-core-upgrade.12` **验收版 / prerelease**，内核按官方预发布版本更新。
+支持 **amd64 / arm64**，目标是常见 Debian / Ubuntu / RHEL 系 **systemd** 服务器；一键入口不会在 OpenRC、SysVinit、runit 或未运行 systemd 的容器中继续安装。先备份现有配置并阅读 [升级说明](docs/UPGRADE.md)。当前固定安装 `v0.1.0-core-upgrade.13` **验收版 / prerelease**，内核按官方预发布版本更新。
 
 与原项目命令格式一致：
 
@@ -66,7 +66,7 @@ wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/main/install.sh && ba
 生产环境建议固定已验收标签，避免 `main` 变化：
 
 ```bash
-wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/v0.1.0-core-upgrade.12/install.sh && bash install.sh
+wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/v0.1.0-core-upgrade.13/install.sh && bash install.sh
 ```
 
 - 从本仓库 Release 下载对应架构，校验 SHA256，原子替换程序并备份旧文件。下载/校验失败不会安装。
@@ -74,9 +74,9 @@ wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/v0.1.0-core-upgrade.1
 - 安装器会先执行适配后的 `scripts/install.sh`，仅在缺少工具时安装必要系统包，不做整机升级；**不安装/启用防火墙服务，不改端口规则**。
 - 首次安装会把兼容原项目的 `V2bX` 管理命令装到 `/usr/bin/V2bX`，并创建 `v2bx` 别名，提供 `start|stop|restart|status|enable|disable|log|update|generate|config|version|x25519|uninstall|ports` 等菜单/命令。**不会覆盖配置/证书，不自动启动、重启或设置开机启动。**
 
-首次配置只填写 **核心、面板地址、面板密钥（不回显）、节点ID**。之后自动识别协议、读取域名与端口、复用/申请HTTP证书、备份并写入配置、启动和设置自启；不再询问HTTP确认、协议、证书方式、邮箱、Y/N或DEPLOY。缺少必要域名或部署失败时返回真实错误，保留回滚；REALITY/无TLS不申请公共证书。
+每个节点填写 **核心、面板地址、面板密钥（不回显）、节点ID**，之后可用 Y/N 决定是否继续添加。最后统一识别协议、读取域名与端口、复用/申请HTTP证书、备份并写入配置、启动和设置自启；不再询问HTTP确认、协议、证书方式、邮箱或DEPLOY。缺少必要域名或部署失败时返回真实错误，保留回滚；REALITY/无TLS不申请公共证书。
 
-菜单1 / `v2bx install` 安装后进入四项自动配置指引；菜单15 / `v2bx generate` 也使用该流程。每次配置一个节点并合并到现有配置，保留其他节点和原有调优参数。需要手动协议、DNS证书或原多节点Y/N向导时使用 `v2bx generate --advanced`。菜单2只更新组件。菜单3直接彻底删除本项目数据；保留数据用 `v2bx uninstall --keep-config`。
+菜单1 / `v2bx install` 安装后进入节点自动配置指引；菜单15 / `v2bx generate` 也使用该流程。每个节点填写核心、面板地址、密钥和节点ID后，可按 Y 继续添加；按 N 后统一校验并部署，保留原配置中的其他节点和调优参数。需要手动协议、DNS证书时使用 `v2bx generate --advanced`。菜单2只更新组件。菜单3直接彻底删除本项目数据；保留数据用 `v2bx uninstall --keep-config`。
 
 HTTP-01需要TCP80且被占用时，自动停止并恢复可识别的托管服务；独立进程使用pidfd执行TERM/KILL，无法自动恢复的独立进程会有服务中断风险。`--check-only`不释放端口。同一节点复用原证书及ACME配置；自动续签仍需满足所选证书方式的网络条件。
 
