@@ -32,6 +32,7 @@ func buildOutbound(config *conf2.Options, tag string) (*core.OutboundHandlerConf
 	}
 	proxySetting := &conf.FreedomConfig{
 		DomainStrategy: domainStrategy,
+		FinalRules:     []*conf.FreedomFinalRuleConfig{{Action: "allow"}},
 	}
 	var setting json.RawMessage
 	setting, err := json.Marshal(proxySetting)

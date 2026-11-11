@@ -48,17 +48,14 @@ class HTTPPortTests(unittest.TestCase):
                 self.assertEqual(lease.stopped, [])
                 run.assert_not_called()
 
-    def test_default_cancel_changes_nothing(self):
-        for answer in ('N', 'n', '', 'yes'):
-            with self.subTest(answer=answer), patch.object(p, 'run') as run:
-                with self.assertRaisesRegex(p.PortError, '取消'):
-                    self.prepare(ask=Mock(return_value=answer), interactive=True)
-                run.assert_not_called()
+    def test_default_automatically_releases_managed_services(self):
+        with patch.object(p, 'run') as run:
+            lease = self.prepare(ask=Mock(return_value='N'), interactive=True)
+        self.assertIsNotNone(lease)
+        run.assert_not_called()
 
-    def test_yes_deploy_is_not_permission_to_stop_other_services(self):
-        with self.assertRaisesRegex(p.PortError, '取消'):
-            self.prepare(interactive=False)
-        self.assertIsNotNone(self.prepare(release=True))
+    def test_deploy_automatically_releases_managed_services(self):
+        self.assertIsNotNone(self.prepare(interactive=False))
 
     def test_check_only_never_acts_even_with_force_flags(self):
         with patch.object(p, 'run') as run:
@@ -71,11 +68,10 @@ class HTTPPortTests(unittest.TestCase):
         with self.assertRaisesRegex(p.PortError, '共用'):
             self.prepare(release=True)
 
-    def test_raw_requires_separate_exact_confirmation(self):
+    def test_raw_processes_are_authorized_without_confirmation(self):
         self.owner['unit'] = ''
         with patch.object(p.os, 'pidfd_open', create=True), patch.object(p.signal, 'pidfd_send_signal', create=True):
-            with self.assertRaisesRegex(p.PortError, '未确认'):
-                self.prepare(interactive=True, release=True, ask=Mock(return_value='Y'))
+            self.assertTrue(self.prepare(interactive=True, release=True, ask=Mock(return_value='Y')).allow_kill)
             self.assertTrue(self.prepare(interactive=True, ask=Mock(return_value='KILL-PORT80')).allow_kill)
             self.assertTrue(self.prepare(kill=True).allow_kill)
 

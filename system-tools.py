@@ -26,10 +26,6 @@ def run(*args, check=True):
     return result
 
 
-def confirm(message, token):
-    return input(message + '\n输入 ' + token + ' 确认，其他输入取消：').strip() == token
-
-
 def backup_dir():
     directory = Path('/var/backups/V2bX-2') / (datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ') + '-' + uuid.uuid4().hex[:8])
     directory.mkdir(parents=True, mode=0o700)
@@ -75,9 +71,6 @@ def bbr():
     current = run('sysctl', '-n', 'net.ipv4.tcp_congestion_control').stdout.strip()
     print('当前内核：' + platform.release() + '；拥塞控制：' + current)
     print('“最新内核”指当前发行版已配置签名软件源的最新候选包，不是未知第三方/mainline。保留旧内核，不自动重启。')
-    if not confirm('安装发行版内核元包并启用fq/BBR？自定义内核用户请先确认供应商兼容性。', 'INSTALL-KERNEL'):
-        print('已取消，系统未修改。')
-        return
     if shutil.which('apt-get'):
         info = dict(line.split('=', 1) for line in Path('/etc/os-release').read_text().splitlines() if '=' in line)
         distro = info.get('ID', '').strip('"')
@@ -90,14 +83,9 @@ def bbr():
             raise RuntimeError('未验证的apt发行版，拒绝猜测内核元包')
         run('apt-get', 'update')
         print(run('apt-cache', 'policy', package).stdout)
-        if not confirm('确认以上候选内核？下载和安装可能需要数分钟。', 'INSTALL'):
-            print('已取消安装；仅刷新了软件源索引。')
-            return
         os.environ['DEBIAN_FRONTEND'] = 'noninteractive'
         run('apt-get', 'install', '-y', '--no-install-recommends', package)
     elif shutil.which('dnf'):
-        if not confirm('使用dnf安装已配置签名软件源的kernel包？', 'INSTALL'):
-            return
         run('dnf', 'install', '-y', 'kernel')
     else:
         raise RuntimeError('仅自动支持Debian/Ubuntu/dnf，未执行第三方脚本')
@@ -187,9 +175,6 @@ def open_ports():
     print('危险：此操作向所有来源开放本机全部TCP/UDP入站端口，会暴露数据库等服务。')
     print('不改变云安全组、路由器或SELinux；不flush、不停防火墙、不删除Hysteria2 NAT。')
     print('只修改宿主输入过滤。原生规则重启/防火墙reload后可能失效，不伪称永久放行。')
-    if not confirm('确认开放所有端口？正常节点只需放行指定UDP范围和HTTP-01 TCP80。', 'OPEN-ALL-PORTS'):
-        print('已取消，防火墙未修改。')
-        return
     for manager in ('firewalld', 'ufw'):
         if run('systemctl', 'is-active', '--quiet', manager, check=False).returncode == 0:
             raise RuntimeError(manager + '正在管理规则，请在其管理界面操作；不绕过或关闭防火墙管理器')
@@ -238,9 +223,6 @@ def open_ports():
     statefile.chmod(0o600)
     helper = directory / 'system-tools.py'
     shutil.copyfile(__file__, helper)
-    # Scheduled before edits; survives SSH disconnection and Ctrl-C.
-    run('systemd-run', '--unit=' + tag, '--on-active=120s', '--timer-property=AccuracySec=1s',
-        sys.executable, str(helper), 'rollback', str(statefile), '--scheduled')
     try:
         with state_lock(statefile):
             if not statefile.exists():
@@ -250,24 +232,18 @@ def open_ports():
             else:
                 for tool, spec in state['rules']:
                     run(tool, '-w', '5', '-I', 'INPUT', '1', *spec)
-        print('已临时开放。120秒内未确认会自动撤回本工具新增规则。请从第二个SSH会话确认连接。')
-        if confirm('确认保留新增规则？', 'KEEP'):
-            commit_rules(statefile)
-            run('systemctl', 'stop', tag + '.timer')
-            print('已保留临时规则。备份及手动撤回状态：' + str(statefile))
-            print('手动撤回：python3 ' + str(helper) + ' rollback ' + str(statefile))
-        else:
-            run('systemctl', 'stop', tag + '.timer', check=False)
-            rollback(statefile)
+        commit_rules(statefile)
+        print('已放行全部TCP/UDP入站端口。备份及手动撤回状态：' + str(statefile))
+        print('手动撤回：python3 ' + str(helper) + ' rollback ' + str(statefile))
     except BaseException:
-        # Also roll back immediately if still connected; the timer is a safety net.
+        # Roll back immediately if applying or committing the rules fails.
         if statefile.exists():
             rollback(statefile)
         raise
 
 
 def main():
-    parser = argparse.ArgumentParser(description='V2bX-2系统工具（显式危险确认）')
+    parser = argparse.ArgumentParser(description='V2bX-2系统工具')
     parser.add_argument('action', choices=('bbr', 'open-ports', 'rollback'))
     parser.add_argument('state', nargs='?')
     parser.add_argument('--scheduled', action='store_true')

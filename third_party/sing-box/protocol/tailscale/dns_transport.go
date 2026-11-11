@@ -1,4 +1,4 @@
-//go:build with_gvisor
+//go:build with_tailscale
 
 package tailscale
 
@@ -55,10 +55,11 @@ type DNSTransport struct {
 	access                 sync.RWMutex
 	routePrefixes          []netip.Prefix
 	routes                 map[string][]adapter.DNSTransport
-	hosts                  map[string][]netip.Addr
 	magicHosts             nDNSResolver.MagicDNSHosts
-	searchDomains          []string
+	domains                tailnetDomains
+	serverAddresses        []netip.Addr
 	defaultResolvers       []adapter.DNSTransport
+	resolverScope          *adapter.Scope
 }
 
 func NewDNSTransport(ctx context.Context, logger log.ContextLogger, tag string, options option.TailscaleDNSServerOptions) (adapter.DNSTransport, error) {
@@ -77,7 +78,7 @@ func NewDNSTransport(ctx context.Context, logger log.ContextLogger, tag string, 
 	}, nil
 }
 
-func (t *DNSTransport) Start(stage adapter.StartStage) error {
+func (t *DNSTransport) Start(stage adapter.StartStage, scope *adapter.Scope) error {
 	if stage != adapter.StartStateInitialize {
 		return nil
 	}
@@ -94,6 +95,22 @@ func (t *DNSTransport) Start(stage adapter.StartStage) error {
 	}
 	ep.onReconfigHook = t.onReconfig
 	t.endpoint = ep
+	scope.Add(func() error {
+		t.access.Lock()
+		resolverScope := t.resolverScope
+		t.routePrefixes = nil
+		t.routes = nil
+		t.magicHosts = nil
+		t.domains = tailnetDomains{}
+		t.serverAddresses = nil
+		t.defaultResolvers = nil
+		t.resolverScope = nil
+		t.access.Unlock()
+		if resolverScope != nil {
+			return resolverScope.Close()
+		}
+		return nil
+	})
 	return nil
 }
 
@@ -119,58 +136,63 @@ func (t *DNSTransport) updateDNSServers(routeConfig *router.Config, dnsConfig *n
 		directDialer := common.Must1(dialer.NewDefault(t.ctx, option.DialerOptions{}))
 		return &DNSDialer{transport: t, fallbackDialer: directDialer}
 	})
+	resolverScope := adapter.NewScope(t.ctx, t.logger)
 	routes := make(map[string][]adapter.DNSTransport)
+	var serverAddresses []netip.Addr
 	for domain, resolvers := range dnsConfig.Routes {
 		var myResolvers []adapter.DNSTransport
 		for _, resolver := range resolvers {
-			myResolver, err := t.createResolver(directDialerOnce, resolver)
+			myResolver, err := t.createResolver(resolverScope, directDialerOnce, resolver)
 			if err != nil {
-				return err
+				return E.Errors(err, resolverScope.Close())
 			}
 			myResolvers = append(myResolvers, myResolver)
+			serverAddrPort, isIPResolver := resolver.IPPort()
+			if isIPResolver {
+				serverAddresses = append(serverAddresses, serverAddrPort.Addr())
+			}
 		}
 		routes[mDNS.CanonicalName(domain.WithTrailingDot())] = myResolvers
 	}
-	hosts := make(map[string][]netip.Addr)
-	for domain, addresses := range dnsConfig.Hosts {
-		hosts[domain.WithTrailingDot()] = addresses
-	}
-	searchDomains := common.Map(dnsConfig.SearchDomains, func(it dnsname.FQDN) string {
-		return it.WithTrailingDot()
-	})
+	domains := newTailnetDomains(dnsConfig)
 	var defaultResolvers []adapter.DNSTransport
 	for _, resolver := range dnsConfig.DefaultResolvers {
-		myResolver, err := t.createResolver(directDialerOnce, resolver)
+		myResolver, err := t.createResolver(resolverScope, directDialerOnce, resolver)
 		if err != nil {
-			return err
+			return E.Errors(err, resolverScope.Close())
 		}
 		defaultResolvers = append(defaultResolvers, myResolver)
+		serverAddrPort, isIPResolver := resolver.IPPort()
+		if isIPResolver {
+			serverAddresses = append(serverAddresses, serverAddrPort.Addr())
+		}
 	}
 
 	t.access.Lock()
-	oldResolvers := t.collectResolversLocked()
+	oldResolverScope := t.resolverScope
 	t.routePrefixes = routePrefixes
 	t.routes = routes
-	t.hosts = hosts
 	t.magicHosts = t.endpoint.server.ExportLocalBackend().ExportMagicDNSHosts()
-	t.searchDomains = searchDomains
+	t.domains = domains
+	t.serverAddresses = common.Uniq(serverAddresses)
 	t.defaultResolvers = defaultResolvers
+	t.resolverScope = resolverScope
 	t.access.Unlock()
 
-	for _, transport := range oldResolvers {
-		transport.Close()
+	if oldResolverScope != nil {
+		oldResolverScope.Close()
 	}
 
 	if len(defaultResolvers) > 0 {
-		t.logger.Info("updated ", len(routes), " routes, ", len(hosts), " hosts, ", len(searchDomains), " search domains, default resolvers: ",
+		t.logger.Info("updated ", len(routes), " routes, ", len(dnsConfig.Hosts), " hosts, ", len(domains.searchDomains), " search domains, default resolvers: ",
 			strings.Join(common.Map(dnsConfig.DefaultResolvers, func(it *dnstype.Resolver) string { return it.Addr }), " "))
 	} else {
-		t.logger.Info("updated ", len(routes), " routes, ", len(hosts), " hosts, ", len(searchDomains), " search domains")
+		t.logger.Info("updated ", len(routes), " routes, ", len(dnsConfig.Hosts), " hosts, ", len(domains.searchDomains), " search domains")
 	}
 	return nil
 }
 
-func (t *DNSTransport) createResolver(directDialer func() N.Dialer, resolver *dnstype.Resolver) (adapter.DNSTransport, error) {
+func (t *DNSTransport) createResolver(resolverScope *adapter.Scope, directDialer func() N.Dialer, resolver *dnstype.Resolver) (adapter.DNSTransport, error) {
 	serverURL, parseURLErr := url.Parse(resolver.Addr)
 	isHTTPScheme := parseURLErr == nil && (serverURL.Scheme == "http" || serverURL.Scheme == "https")
 	var myDialer N.Dialer
@@ -181,27 +203,47 @@ func (t *DNSTransport) createResolver(directDialer func() N.Dialer, resolver *dn
 	}
 	if len(resolver.BootstrapResolution) > 0 {
 		bootstrapTransport := transport.NewUDPRaw(t.logger, t.TransportAdapter, myDialer, M.SocksaddrFrom(resolver.BootstrapResolution[0], 53))
+		err := bootstrapTransport.Start(adapter.StartStateStart, resolverScope)
+		if err != nil {
+			return nil, err
+		}
 		myDialer = dialer.NewResolveDialer(t.ctx, myDialer, false, "", adapter.DNSQueryOptions{Transport: bootstrapTransport}, 0)
 	} else {
 		myDialer = dialer.NewResolveDialer(t.ctx, myDialer, false, "", t.endpoint.queryOptions, 0)
 	}
 	if isHTTPScheme {
+		if serverURL.Hostname() == "" {
+			return nil, E.New("missing host in resolver address: ", resolver.Addr)
+		}
 		serverAddr := M.ParseSocksaddrHostPortStr(serverURL.Hostname(), serverURL.Port())
 		switch serverURL.Scheme {
 		case "https":
 			if serverAddr.Port == 0 {
 				serverAddr.Port = 443
 			}
-			tlsConfig := common.Must1(tls.NewClient(t.ctx, t.logger, serverAddr.AddrString(), option.OutboundTLSOptions{
+			tlsConfig, err := tls.NewClient(t.ctx, t.logger, serverAddr.AddrString(), option.OutboundTLSOptions{
 				Enabled: true,
 				ALPN:    []string{http2.NextProtoTLS, "http/1.1"},
-			}))
-			return transport.NewHTTPSRaw(t.TransportAdapter, t.logger, myDialer, serverURL, http.Header{}, serverAddr, tlsConfig), nil
+			})
+			if err != nil {
+				return nil, E.Cause(err, "create TLS config for resolver ", resolver.Addr)
+			}
+			httpsTransport := transport.NewHTTPSRaw(t.TransportAdapter, t.logger, myDialer, serverURL, http.Header{}, serverAddr, tlsConfig)
+			err = httpsTransport.Start(adapter.StartStateStart, resolverScope)
+			if err != nil {
+				return nil, err
+			}
+			return httpsTransport, nil
 		case "http":
 			if serverAddr.Port == 0 {
 				serverAddr.Port = 80
 			}
-			return transport.NewHTTPSRaw(t.TransportAdapter, t.logger, myDialer, serverURL, http.Header{}, serverAddr, nil), nil
+			httpTransport := transport.NewHTTPSRaw(t.TransportAdapter, t.logger, myDialer, serverURL, http.Header{}, serverAddr, nil)
+			err := httpTransport.Start(adapter.StartStateStart, resolverScope)
+			if err != nil {
+				return nil, err
+			}
+			return httpTransport, nil
 		}
 	}
 	serverAddr := M.ParseSocksaddr(resolver.Addr)
@@ -214,7 +256,12 @@ func (t *DNSTransport) createResolver(directDialer func() N.Dialer, resolver *dn
 	if serverAddr.Port == 0 {
 		serverAddr.Port = 53
 	}
-	return transport.NewUDPRaw(t.logger, t.TransportAdapter, myDialer, serverAddr), nil
+	udpTransport := transport.NewUDPRaw(t.logger, t.TransportAdapter, myDialer, serverAddr)
+	err := udpTransport.Start(adapter.StartStateStart, resolverScope)
+	if err != nil {
+		return nil, err
+	}
+	return udpTransport, nil
 }
 
 func buildRoutePrefixes(routeConfig *router.Config) []netip.Prefix {
@@ -238,50 +285,102 @@ func buildRoutePrefixes(routeConfig *router.Config) []netip.Prefix {
 	return ipSet.Prefixes()
 }
 
-func (t *DNSTransport) Close() error {
-	t.access.Lock()
-	transports := t.collectResolversLocked()
-	t.routePrefixes = nil
-	t.routes = nil
-	t.hosts = nil
-	t.magicHosts = nil
-	t.defaultResolvers = nil
-	t.access.Unlock()
-
-	var err error
-	for _, transport := range transports {
-		name := "resolver/" + transport.Type() + "[" + transport.Tag() + "]"
-		err = E.Append(err, transport.Close(), func(err error) error {
-			return E.Cause(err, "close ", name)
-		})
-	}
-	return err
-}
-
 func (t *DNSTransport) Raw() bool {
 	return true
 }
 
+func (t *DNSTransport) ServerAddresses() []netip.Addr {
+	t.access.RLock()
+	defer t.access.RUnlock()
+	return t.serverAddresses
+}
+
+func (t *DNSTransport) SearchDomains() []string {
+	t.access.RLock()
+	defer t.access.RUnlock()
+	return t.domains.searchDomains
+}
+
 func (t *DNSTransport) PreferredDomain(domain string) bool {
 	t.access.RLock()
-	hosts := t.hosts
+	domains := t.domains
 	magicHosts := t.magicHosts
-	routes := t.routes
-	searchDomains := t.searchDomains
 	t.access.RUnlock()
-	if _, loaded := lookupHosts(hosts, magicHosts, domain); loaded {
+	return domains.match(magicHosts, mDNS.CanonicalName(domain), t.acceptSearchDomain)
+}
+
+type tailnetDomains struct {
+	hosts             map[string][]netip.Addr
+	searchDomains     []string
+	localSuffixes     []string
+	forwardedSuffixes []string
+}
+
+func newTailnetDomains(dnsConfig *nDNS.Config) tailnetDomains {
+	domains := tailnetDomains{
+		hosts: make(map[string][]netip.Addr, len(dnsConfig.Hosts)),
+		searchDomains: common.Map(dnsConfig.SearchDomains, func(it dnsname.FQDN) string {
+			return mDNS.CanonicalName(it.WithTrailingDot())
+		}),
+	}
+	for domain, addresses := range dnsConfig.Hosts {
+		domains.hosts[mDNS.CanonicalName(domain.WithTrailingDot())] = addresses
+	}
+	for domain, resolvers := range dnsConfig.Routes {
+		suffix := mDNS.CanonicalName(domain.WithTrailingDot())
+		if len(resolvers) == 0 {
+			domains.localSuffixes = append(domains.localSuffixes, suffix)
+		} else {
+			domains.forwardedSuffixes = append(domains.forwardedSuffixes, suffix)
+		}
+	}
+	common.SortBy(domains.forwardedSuffixes, func(it string) int {
+		return -mDNS.CountLabel(it)
+	})
+	return domains
+}
+
+func (d tailnetDomains) match(magicHosts nDNSResolver.MagicDNSHosts, domain string, expandSearchDomains bool) bool {
+	routeSuffix, _ := d.matchRoute(domain)
+	if routeSuffix != "" {
 		return true
 	}
-	if t.acceptSearchDomain && len(searchDomains) > 0 && mDNS.CountLabel(domain) == 1 {
+	_, loaded := lookupHosts(d.hosts, magicHosts, domain)
+	if loaded {
 		return true
 	}
-	canonicalDomain := mDNS.CanonicalName(domain)
-	for suffix := range routes {
-		if matchDomainSuffix(canonicalDomain, suffix) {
+	if !expandSearchDomains || mDNS.CountLabel(domain) != 1 {
+		return false
+	}
+	for _, searchDomain := range d.searchDomains {
+		expandedDomain := domain + searchDomain
+		_, loaded = lookupHosts(d.hosts, magicHosts, expandedDomain)
+		if loaded {
+			return true
+		}
+		_, forwarded := d.matchRoute(expandedDomain)
+		if forwarded {
 			return true
 		}
 	}
 	return false
+}
+
+// Tailscale's resolver answers names under resolver-less routes from hosts only
+// and returns NXDOMAIN for the rest without forwarding, even when a forwarded
+// route such as ts.net also matches; otherwise the longest forwarded route wins.
+func (d tailnetDomains) matchRoute(domain string) (suffix string, forwarded bool) {
+	for _, localSuffix := range d.localSuffixes {
+		if matchDomainSuffix(domain, localSuffix) {
+			return localSuffix, false
+		}
+	}
+	for _, forwardedSuffix := range d.forwardedSuffixes {
+		if matchDomainSuffix(domain, forwardedSuffix) {
+			return forwardedSuffix, true
+		}
+	}
+	return "", false
 }
 
 func matchDomainSuffix(domain string, suffix string) bool {
@@ -326,7 +425,7 @@ func (t *DNSTransport) ExchangeAsync(ctx context.Context, message *mDNS.Msg, cal
 
 func (t *DNSTransport) exchangeWithSearchDomains(ctx context.Context, message *mDNS.Msg, callback func(response *mDNS.Msg, err error)) {
 	t.access.RLock()
-	searchDomains := t.searchDomains
+	searchDomains := t.domains.searchDomains
 	t.access.RUnlock()
 	if len(searchDomains) == 0 {
 		callback(nil, dns.RcodeNameError)
@@ -370,13 +469,14 @@ func (t *DNSTransport) exchangeOnce(ctx context.Context, message *mDNS.Msg, allo
 	question := message.Question[0]
 
 	t.access.RLock()
-	hosts := t.hosts
+	domains := t.domains
 	magicHosts := t.magicHosts
 	routes := t.routes
 	defaultResolvers := t.defaultResolvers
 	t.access.RUnlock()
 
-	addresses, hostsLoaded := lookupHosts(hosts, magicHosts, question.Name)
+	canonicalName := mDNS.CanonicalName(question.Name)
+	addresses, hostsLoaded := lookupHosts(domains.hosts, magicHosts, canonicalName)
 	if hostsLoaded {
 		switch question.Qtype {
 		case mDNS.TypeA, mDNS.TypeAAAA:
@@ -386,23 +486,21 @@ func (t *DNSTransport) exchangeOnce(ctx context.Context, message *mDNS.Msg, allo
 		}
 		return
 	}
-	canonicalName := mDNS.CanonicalName(question.Name)
-	for domainSuffix, transports := range routes {
-		if matchDomainSuffix(canonicalName, domainSuffix) {
-			if len(transports) == 0 {
-				callback(&mDNS.Msg{
-					MsgHdr: mDNS.MsgHdr{
-						Id:       message.Id,
-						Rcode:    mDNS.RcodeNameError,
-						Response: true,
-					},
-					Question: []mDNS.Question{question},
-				}, nil)
-				return
-			}
-			transport.ExchangeSequential(ctx, resolverExchangers(transports, message), nil, callback)
-			return
-		}
+	routeSuffix, forwarded := domains.matchRoute(canonicalName)
+	if forwarded {
+		transport.ExchangeSequential(ctx, resolverExchangers(routes[routeSuffix], message), nil, callback)
+		return
+	}
+	if routeSuffix != "" {
+		callback(&mDNS.Msg{
+			MsgHdr: mDNS.MsgHdr{
+				Id:       message.Id,
+				Rcode:    mDNS.RcodeNameError,
+				Response: true,
+			},
+			Question: []mDNS.Question{question},
+		}, nil)
+		return
 	}
 	if allowDefaultResolvers {
 		if len(defaultResolvers) > 0 {
@@ -492,3 +590,8 @@ func (t *DNSTransport) routePrefixesSnapshot() []netip.Prefix {
 	defer t.access.RUnlock()
 	return append([]netip.Prefix(nil), t.routePrefixes...)
 }
+
+var (
+	_ adapter.DNSTransportWithPreferredDomain = (*DNSTransport)(nil)
+	_ adapter.DNSTransportWithConfiguration   = (*DNSTransport)(nil)
+)

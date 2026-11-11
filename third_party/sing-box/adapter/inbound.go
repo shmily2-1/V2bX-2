@@ -6,6 +6,7 @@ import (
 	"net/netip"
 	"time"
 
+	"github.com/sagernet/sing-box/common/interrupt"
 	"github.com/sagernet/sing-box/common/tlsspoof"
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/log"
@@ -58,6 +59,7 @@ type InboundContext struct {
 
 	RouteRule     string
 	RouteOutbound string
+	OutboundChain []Outbound
 
 	// sniffer
 
@@ -187,6 +189,17 @@ func ContextWithDNSTransportTag(ctx context.Context, transportTag string) contex
 func DNSTransportTagFromContext(ctx context.Context) (string, bool) {
 	transportTag, loaded := ctx.Value((*dnsTransportTagKey)(nil)).(string)
 	return transportTag, loaded
+}
+
+func ContextForMultiplexSession(ctx context.Context) context.Context {
+	var sessionContext InboundContext
+	metadata := ContextFrom(ctx)
+	if metadata != nil {
+		sessionContext.Outbound = metadata.Outbound
+	}
+	ctx = ContextWithDNSTransportTag(ctx, "")
+	ctx = interrupt.ContextWithIsExternalConnection(ctx, false)
+	return WithContext(ctx, &sessionContext)
 }
 
 func WithContext(ctx context.Context, inboundContext *InboundContext) context.Context {

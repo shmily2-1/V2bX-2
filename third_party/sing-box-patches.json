@@ -1,8 +1,8 @@
 {
   "module": "github.com/sagernet/sing-box",
-  "version": "v1.14.1",
-  "module_sum": "h1:LumpcrArE3cxXYxoKhNN4yOQq1TeaEEuKWHCokodO9M=",
-  "upstream_commit": "1ac1a339cb1223e9c70eae14c44411c75033c02d",
+  "version": "v1.15.0-alpha.13",
+  "module_sum": "h1:O6728RBadOUoC186Lsky8Mt0f6Ulca0XcM2EQFVOtEQ=",
+  "upstream_commit": "824dbcfb4dd0a95921840b1737b950cde590241e",
   "omitted_top_level": [
     ".github",
     ".gitignore",
@@ -13,13 +13,61 @@
     "test"
   ],
   "patches": {
+    "adapter/inbound.go": {
+      "upstream_sha256": "27c83839403ea2531c61293e0d0a6892d7f17559557a37c8b334e818f17d61bc",
+      "patched_sha256": "c016c56b37878c5718675a6ac75b986dcd27c07dcf106d534e156d2c51bb0304"
+    },
+    "adapter/inbound/manager.go": {
+      "upstream_sha256": "86a590a31281399a376aef4caf2d59bb1287f3a38c4a561a9982cf8d6f3c2576",
+      "patched_sha256": "3577d2006cc569879bf1c706610efd15a0ffee18e08deb71665a86832dc0b1a6"
+    },
+    "adapter/lifecycle_legacy.go": {
+      "upstream_sha256": null,
+      "patched_sha256": "9700724cf849ca66b7103880051b924b288822307176455927ea66b651fb721b"
+    },
+    "box.go": {
+      "upstream_sha256": "ef74d46689ef631dfb57872e4feb9991d40480213f4ac8aaa757ab42977c3671",
+      "patched_sha256": "e04144d5707c5124b12d125827436b670ccd89a25413aff8e95138ba4ddd244e"
+    },
+    "cmd/internal/tun_bench/main.go": {
+      "upstream_sha256": null,
+      "patched_sha256": "759ae904bae53d3478a1844b2407ab94a647816820e1d014c4b2aa0cb9ea45b0"
+    },
+    "common/redir/redir_darwin.go": {
+      "upstream_sha256": null,
+      "patched_sha256": "70c4e5b30fb5b5e8fe9487bc3253d3b2022986f54f11839ac4a6c85897f98b6f"
+    },
+    "common/redir/redir_linux.go": {
+      "upstream_sha256": null,
+      "patched_sha256": "f24b41c1d8b171504cb0d2bb69fc9b7c255020516005c65205293eaf356c0f74"
+    },
+    "common/redir/redir_other.go": {
+      "upstream_sha256": null,
+      "patched_sha256": "baf24104c810702527057b7d89a277dc5f916d3fc6db83902403de0912e40d65"
+    },
+    "experimental/libbox/ffi.json": {
+      "upstream_sha256": null,
+      "patched_sha256": "370410728204e3aa2a3b8fca34ef80b0b14aaab6936eac984df44c6c99cf7ec5"
+    },
     "protocol/anytls/anytls_user.go": {
       "upstream_sha256": null,
-      "patched_sha256": "3f14b9a93c1ef1b8df567f6af0cce3787be52772011c9af676cbaf5debd2c209"
+      "patched_sha256": "dbd9fb79b7b71d5dbb8b26e10dbe0ea2bc3dec073d60919735a62f67fbd0a940"
+    },
+    "protocol/anytls/client_metadata.go": {
+      "upstream_sha256": null,
+      "patched_sha256": "eb87889eb58a9e87713d82417ca418c6885d1b4ec10bfe63139c7e919bda27fa"
     },
     "protocol/anytls/inbound.go": {
-      "upstream_sha256": "bce224ce39fd69504fed58c6b2d93e62ff7ae795441ca9cf18747763aeb634d1",
-      "patched_sha256": "1e94803abe6b4852a10a128c940ff1c874996ff547cc86ea6d4530a4f34ea89a"
+      "upstream_sha256": "dee076371f639536e53a75c4666e2a6c3a974772e6d3741a0dfc8ac00eca1253",
+      "patched_sha256": "8b8a516562b0337022fbf1e3651029d3a1f24a7a288dd696058ecbe888c021af"
+    },
+    "protocol/anytls/outbound.go": {
+      "upstream_sha256": "7dbe006f404782b3c9a960ff361162a4e18152966e48fc69fc07ac6630ceab06",
+      "patched_sha256": "b2a8a3ecacd48e6a9b2c4a2272c93e541cf5e290e290f2df6f7ed30ef9d473de"
+    },
+    "protocol/bridge/reservation_windows.go": {
+      "upstream_sha256": null,
+      "patched_sha256": "58f42bce517e6576ad4bf3d220189e99bb04c0a8bfc51793bf989f9da14ab7d5"
     },
     "protocol/hysteria/hysteria_user.go": {
       "upstream_sha256": null,
@@ -30,32 +78,32 @@
       "patched_sha256": "b9a6018adc301c2fd4a992e53c77fe04602d9328cde4cdb5f8812cf42ca945d5"
     },
     "protocol/hysteria2/inbound.go": {
-      "upstream_sha256": "f7959dd2a86ddf282cd96d9ddafd1e776bc84cf47e5e99e3fa36cddd0ca1b980",
-      "patched_sha256": "002aa7d49a0924771f825eeb598cbd1549f7d53ced967e51bb48f6109cd75362"
+      "upstream_sha256": "a5a4837e06c26ec37675d63ec6ef9d1515388e176cb87fee5eecf23e0a0f4bf0",
+      "patched_sha256": "3c3f0af4bde78a3bb41d06e88c8b7b2fb54c60d5e8bf97eb5e529e22d12b4edb"
     },
     "protocol/shadowsocks/shadowsocks_user.go": {
       "upstream_sha256": null,
       "patched_sha256": "40b307489fc0878269a8888458c6276a7720f7f7f4460cf40c14f614b2e7179a"
     },
     "protocol/trojan/inbound.go": {
-      "upstream_sha256": "6521afdd9afc8215f96278763b06c7a25f15b7bc7861c9805e397a311bf03c2c",
-      "patched_sha256": "b1f73d6797d9b80e40dd36f9d483e3777d370c3988b9930eb1a4e40dcb731874"
+      "upstream_sha256": "5fc8e689dd0db2baf095b6017a81e9c0e98d9ad16890bbb14efc65baadf12594",
+      "patched_sha256": "af577edebb86dcaf91fa5ed8896ce3658b34a4770d69721b245fa0b2a9c8c3cc"
     },
     "protocol/trojan/trojan_user.go": {
       "upstream_sha256": null,
       "patched_sha256": "6d69f0415ed1a73a8914c4036df7eee307d905bc90e84d1e20522db32f8f44a3"
     },
     "protocol/tuic/inbound.go": {
-      "upstream_sha256": "fa7647b3b7f93523c871e5b64c0da1bd4632306729f9f328cc8c0ebd48114b72",
-      "patched_sha256": "4cc0dc8432264231b90f99c599147863ec4d1b255d6c3e66e599a2610edf4e8d"
+      "upstream_sha256": "9aa1f814c196ecefc821b9b447ef6064c19f8df3a2063f5652e9a226e7f5bb5c",
+      "patched_sha256": "424566929e2921f3b5526abac73bf4e31cc80deae46bba82d4621130ad3c8fd6"
     },
     "protocol/tuic/tuic_user.go": {
       "upstream_sha256": null,
       "patched_sha256": "04e55239c596b9f06cde746db4ea5984e1ad17cff2e494e899678105c0883968"
     },
     "protocol/vless/inbound.go": {
-      "upstream_sha256": "17b4cd26fd0629576f5ac11530cfd4b26ebe0f1b41746e712f4602e2dc42ab57",
-      "patched_sha256": "69c194215bbd06f6a4c2d99b25d093ae54493f06af816d7c405a70e7a117faa1"
+      "upstream_sha256": "5d783df51e9e88cd94c30b4b49402ead55e2a162bc5d72d99d4e3b226fd6d499",
+      "patched_sha256": "1e607259d0bdd27c1523748e38971e0d2dcec36eee1d1abe64b0a8b5527798aa"
     },
     "protocol/vless/vless_user.go": {
       "upstream_sha256": null,
@@ -64,6 +112,54 @@
     "protocol/vmess/vmess_user.go": {
       "upstream_sha256": null,
       "patched_sha256": "e0bec8728114dc693ca7f962bb574ec1c91d74c1f526b7ee547dbbc5def699be"
+    },
+    "transport/openconnect/device.go": {
+      "upstream_sha256": null,
+      "patched_sha256": "949cc025086bdfe4e4c1f5297d9aa93335b1f279a2f908bac4cfdb55e5395992"
+    },
+    "transport/openconnect/device_stack.go": {
+      "upstream_sha256": null,
+      "patched_sha256": "2cecd0de292cac6c654cd96aff1dbd4ebe65f62dd693e242ef5afff56f622b1f"
+    },
+    "transport/openconnect/device_stack_stub.go": {
+      "upstream_sha256": null,
+      "patched_sha256": "19414bbd5a1b61a5cd17209daadaf6d3f42b91f40ef1c0d73205d7cda389ea66"
+    },
+    "transport/openconnect/device_system.go": {
+      "upstream_sha256": null,
+      "patched_sha256": "a9bf897b1d8a34326c5a1d8563b0c77a02860911f23a2ef44994f2344521f29a"
+    },
+    "transport/openconnect/device_system_stack.go": {
+      "upstream_sha256": null,
+      "patched_sha256": "e799749efff6652b002bfc130304c779e4aff3375c3657b91439118b7dcc998d"
+    },
+    "transport/openvpn/device.go": {
+      "upstream_sha256": null,
+      "patched_sha256": "e07b3ff3d8a605d75d82c0447381f3877ff4bfc2acb3986b6eee5f04db8485d8"
+    },
+    "transport/openvpn/device_stack.go": {
+      "upstream_sha256": null,
+      "patched_sha256": "72537c44ebb366c7aed10b3cca41191f0ba5f74549685f78e99fb023c57d67fb"
+    },
+    "transport/openvpn/device_stack_stub.go": {
+      "upstream_sha256": null,
+      "patched_sha256": "cd59dcb3a00ed97526dd6251053abf4b7ca7a6a651a381aedfe0797860a43240"
+    },
+    "transport/openvpn/device_system.go": {
+      "upstream_sha256": null,
+      "patched_sha256": "8bf296e7b72ed94d4fdbd49f40385ccb6f23cdbc89cd175e9e49d72e730bd6ed"
+    },
+    "transport/openvpn/device_system_stack.go": {
+      "upstream_sha256": null,
+      "patched_sha256": "804d828e069f6128c84c2b60c54e71a1398f428cb949555ba146f23e2365734b"
+    },
+    "transport/wireguard/device_stack_gonet.go": {
+      "upstream_sha256": null,
+      "patched_sha256": "c455a7756f183b1f20ec82f0c304888be05aa5cc5e1e55ffe807e87615a6f217"
+    },
+    "transport/wireguard/device_stack_stub.go": {
+      "upstream_sha256": null,
+      "patched_sha256": "2f2f9b6264ffadbf48ca71e03805a1c34c667869e3f52240dc085b2931f68d78"
     }
   }
 }

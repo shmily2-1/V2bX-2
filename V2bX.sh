@@ -2,7 +2,7 @@
 # Original-style V2bX management menu, adapted from wyx2685/V2bX-script (MPL-2.0).
 # Installed as /usr/bin/V2bX and /usr/local/bin/v2bx. No upstream downloads.
 set -euo pipefail
-script_ref=v0.1.0-core-upgrade.9
+script_ref=v0.1.0-core-upgrade.10
 root=
 if [[ ${1:-} == --root ]]; then
   [[ $# -ge 3 && $2 =~ ^/[a-zA-Z0-9_./-]+$ ]] || { echo 'Invalid --root' >&2; exit 2; }
@@ -127,7 +127,7 @@ Hysteria2 跳跃（独立 hysteria2 / sing）：
   Xboard 需要配套补丁；NodeType=hysteria，面板 version=2。
   例如 port=20000-30000，server_port=8443，hop_interval=30。
   节点需 nftables/iptables、root/CAP_NET_ADMIN 和指定 UDP 范围放行。
-  菜单16可显式确认临时放行全部入站端口；正常节点不建议全开放。
+  菜单16会直接放行全部入站TCP/UDP端口；正常节点不建议全开放。
   文档：github.com/shmily2-1/V2bX-2/blob/main/docs/HYSTERIA2-PORT-HOPPING.md
 HELP
 }
@@ -173,19 +173,14 @@ stop_for_uninstall() {
 }
 uninstall() (
   root_only
-  local keep=0 answer confirmation=UNINSTALL-ALL unit path canonical target
+  local keep=0 unit path canonical target
   [[ $# == 0 || ( $# == 1 && $1 == --keep-config ) ]] || { fail '仅支持 uninstall [--keep-config]'; return 1; }
-  if [[ ${1:-} == --keep-config ]]; then keep=1; confirmation=UNINSTALL; fi
+  if [[ ${1:-} == --keep-config ]]; then keep=1; fi
   if ((keep)); then
-    echo '移除程序、服务和管理命令；保留配置、证书、ACME账户和数据备份。'
+    echo '正在卸载程序、服务和管理命令；保留配置、证书、ACME账户和数据备份。'
   else
-    echo '危险：彻底卸载会删除配置、证书私钥、ACME账户以及本项目备份，无法撤回。'
-    echo '删除范围：/etc/V2bX、/usr/local/lib/V2bX-2、/var/backups/V2bX-2、已识别程序/服务/管理命令及安装器备份。'
-    echo '只删除项目目录；不追删外部共享证书，不清空全机防火墙，不卸载系统内核。'
-    echo '彻底删除证书后重装需要重新签发，频繁卸载重装可能触发CA签发限流。'
+    echo '正在彻底卸载；删除项目配置、证书私钥、ACME账户、本项目备份及已识别安装文件。'
   fi
-  read -r -p "请输入 $confirmation 确认（其他输入取消）：" answer || answer=
-  [[ $answer == "$confirmation" ]] || { echo '已取消'; return 0; }
   find_binary --allow-missing
   unit="$(resolve /etc/systemd/system)/V2bX.service"
   [[ ! -L $unit ]] || { fail '自定义/屏蔽服务链接需人工处理'; return 1; }
@@ -257,11 +252,11 @@ V2bX-2 管理命令（兼容原项目，v2bx 始终指向菜单）：
   v2bx status|log             状态/日志
   v2bx enable|disable        自启设置
   v2bx version|x25519         调用当前真实二进制
-  v2bx uninstall             输入 UNINSTALL-ALL 后彻底删除本项目配置/证书/备份
-  v2bx uninstall --keep-config 仅卸载程序，输入 UNINSTALL 后保留配置/证书
+  v2bx uninstall             直接彻底删除本项目配置/证书/备份
+  v2bx uninstall --keep-config 仅卸载程序并保留配置/证书
   v2bx ports                 Hysteria2 跳跃对接说明
-  v2bx bbr                   签名发行版源内核/BBR（两次确认，不自动重启）
-  v2bx open-ports            全部TCP/UDP入站放行（危险确认、120秒自动撤回）
+  v2bx bbr                   签名发行版源内核/BBR（不自动重启）
+  v2bx open-ports            直接放行全部TCP/UDP入站端口
   v2bx --root /隔离根 ...    验收专用；服务/日志操作被禁止
 安装填写核心、面板地址、密钥、节点ID后自动启动；更新不会自动重启。
 不执行原版安装器/第三方BBR脚本，不关闭防火墙。

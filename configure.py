@@ -264,10 +264,7 @@ def main():
     path = safe_path(Path(args.config), root)
     expected = path.read_bytes() if path.exists() else None
     if expected is not None:
-        print('警告：此操作会替换整个配置。运行中的核心默认监视文件，保存可能触发热重载。')
-        if ask('请输入 REPLACE 继续，其他输入取消', '') != 'REPLACE':
-            print('已取消，原配置未修改。')
-            return 0
+        print('将替换现有配置；运行中的核心可能触发热重载。')
     if args.edit:
         if expected is None:
             raise ValueError('原配置不存在，请先运行 v2bx generate')
@@ -280,9 +277,6 @@ def main():
             validate(document)
     else:
         document = generate_document()
-    if ask('确认写入配置？输入 SAVE，其他输入取消', '') != 'SAVE':
-        print('已取消，没有写入配置。')
-        return 0
     write_atomic(path, document, expected)
     return 0
 

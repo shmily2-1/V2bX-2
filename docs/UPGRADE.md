@@ -3,10 +3,10 @@
 ## 1. 本次变更
 
 - 基于 wyx2685/V2bX `dev_new`，保留原历史，模块改为 `github.com/shmily2-1/V2bX-2`。
-- Xray 改为官方 `v1.260327.0`，保留本项目 dispatcher 的用户计数、审计和限速；去掉官方已经删除的传输伪装头导入，补上 HTTPUpgrade 注册。
+- Xray 改为官方预发布 `v1.260327.1-0.20261109052709-676eaf66f8f0`（对应 `v26.11.9`），保留本项目 dispatcher 的用户计数、审计和限速。
 - 修复空 NetworkSettings 时 Xray StreamSetting 为空导致的 panic，TCP 默认配置无需再传空对象占位。
-- Hysteria core/extras 同步更新到 `v2.12.3`，迁移 Salamander API，并在混淆配置失败时释放 UDP socket。
-- sing-box 更新为官方 `v1.14.1` 源码快照，在 `third_party/sing-box` 保留可审核的动态用户补丁。模块 checksum/官方 commit/每个补丁文件哈希均记录在 manifest，CI 检查漂移。
+- Hysteria core/extras 同步更新到 `v2.13.0`，迁移新版混淆与 QUIC API。
+- sing-box 更新为官方预发布 `v1.15.0-alpha.13` 源码快照，在 `third_party/sing-box` 保留可审核的动态用户补丁。模块 checksum/官方 commit/每个补丁文件哈希均记录在 manifest，CI 检查漂移。
 - sing-box 新增证书 provider registry 和 RoutedFlow 接口适配；移除 fork 的 GetCtx，使用已注入 service registry 的官方 context。
 - gVisor 对齐 sing-box 1.14.1 所需的 `v0.0.0-20260727.0-sing-box-mod.1`，修复旧版本残留导致 macOS `header.IsExtensionHeader` 缺失的构建错误。
 - 用户删除关闭连接时采用 `io.Closer`，避免把 UDP PacketConn 强转 net.Conn 的 panic；VLESS/Trojan/AnyTLS 的连接跟踪放在认证后，确保记录真实用户。

@@ -59,22 +59,17 @@ class ProvisionTests(unittest.TestCase):
                      'ApiKey': 'test-private&secret', 'NodeID': 1, 'NodeType': 'vless', 'CertConfig': {'CertMode': 'none'}}
         self.document = {'Cores': [{'Type': 'sing'}], 'Nodes': [self.node]}
 
-    def test_edit_http_requires_explicit_confirmation(self):
-        with patch.object(p.cfg, 'ask', return_value='INSECURE-HTTP') as ask:
-            self.assertTrue(p.confirm_http_panel(self.document, interactive=True))
-            ask.assert_called_once()
+    def test_http_panel_is_accepted_without_confirmation(self):
         with patch.object(p.cfg, 'ask') as ask:
-            self.assertFalse(p.confirm_http_panel(self.document))
-            self.assertTrue(p.confirm_http_panel(self.document, allowed=True))
+            self.assertTrue(p.confirm_http_panel(self.document, interactive=True))
+            self.assertTrue(p.confirm_http_panel(self.document))
             ask.assert_not_called()
-        with patch.object(p.cfg, 'ask', return_value='cancel'):
-            self.assertFalse(p.confirm_http_panel(self.document, interactive=True))
 
 
     def test_online_wizard_y_continues_n_finishes_one_node_at_a_time(self):
         answers = []
         for core, node_id, more in [('sing', '21', 'Y'), ('xray', '22', 'N')]:
-            answers += [core, self.node['ApiHost'], 'INSECURE-HTTP', self.node['ApiKey'],
+            answers += [core, self.node['ApiHost'], self.node['ApiKey'],
                         node_id, 'vless', more]
         with patch('builtins.input', side_effect=answers), contextlib.redirect_stdout(io.StringIO()) as output:
             document, insecure = p.wizard()
@@ -87,7 +82,7 @@ class ProvisionTests(unittest.TestCase):
     def test_online_wizard_n_lowercase_or_default_stops_after_one(self):
         for answer in ('N', 'n', ''):
             with self.subTest(answer=answer):
-                answers = ['sing', self.node['ApiHost'], 'INSECURE-HTTP', self.node['ApiKey'],
+                answers = ['sing', self.node['ApiHost'], self.node['ApiKey'],
                            '1', 'vless', answer]
                 with patch('builtins.input', side_effect=answers), contextlib.redirect_stdout(io.StringIO()):
                     document, _ = p.wizard()
@@ -316,7 +311,7 @@ class ProvisionTests(unittest.TestCase):
         self.info.update(tls=1, server_name='node.invalid')
         cert = {'CertMode': 'http', 'CertDomain': 'node.invalid', 'Email': 'retained@example.test',
                 'CertFile': str(self.base/'cert'), 'KeyFile': str(self.base/'key')}
-        answers = ['sing', self.node['ApiHost'], 'INSECURE-HTTP', self.node['ApiKey'], '1', 'vless', '', '', 'N']
+        answers = ['sing', self.node['ApiHost'], self.node['ApiKey'], '1', 'vless', '', '', 'N']
         with patch.object(p, 'reusable_certificate', return_value=copy.deepcopy(cert)), patch('builtins.input', side_effect=answers):
             document, _ = p.wizard(self.document)
         self.assertEqual(document['Nodes'][0]['CertConfig'], cert)
@@ -428,17 +423,24 @@ class MaintenanceTests(unittest.TestCase):
                 system_tools.rollback(path)
             self.assertFalse(path.exists())
 
-    def test_bbr_cancel_does_not_install_or_change_sysctl(self):
+    def test_bbr_never_reads_confirmation_input(self):
         result = subprocess.CompletedProcess([],0,'bbr\n','')
-        with patch.object(system_tools,'run',return_value=result) as run, patch('builtins.input',return_value='cancel'):
-            system_tools.bbr()
+        with patch.object(system_tools,'run',return_value=result) as run, \
+             patch.object(system_tools.shutil, 'which', return_value=None), \
+             patch('builtins.input') as prompt:
+            with self.assertRaises(RuntimeError):
+                system_tools.bbr()
             self.assertEqual(run.call_count,1)
             self.assertEqual(run.call_args.args,('sysctl','-n','net.ipv4.tcp_congestion_control'))
+            prompt.assert_not_called()
 
-    def test_open_ports_cancel_runs_nothing(self):
-        with patch.object(system_tools,'run') as run, patch('builtins.input',return_value='cancel'):
-            system_tools.open_ports()
-            run.assert_not_called()
+    def test_open_ports_never_reads_confirmation_input(self):
+        with patch.object(system_tools,'run') as run, \
+             patch.object(system_tools.shutil, 'which', return_value=None), \
+             patch('builtins.input') as prompt:
+            with self.assertRaises(RuntimeError):
+                system_tools.open_ports()
+            prompt.assert_not_called()
 
     def test_nft_all_input_chains_and_no_nat_flush(self):
         data = {'nftables':[{'chain':{'family':'inet','table':'a','name':'input','hook':'input','type':'filter'}},

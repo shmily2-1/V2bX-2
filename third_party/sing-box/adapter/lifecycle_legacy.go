@@ -1,8 +1,15 @@
 package adapter
 
+import (
+	"context"
+
+	"github.com/sagernet/sing-box/log"
+)
+
 func LegacyStart(starter any, stage StartStage) error {
 	if lifecycle, isLifecycle := starter.(Lifecycle); isLifecycle {
-		return lifecycle.Start(stage)
+		scope := NewScope(context.Background(), log.NewNOPFactory().Logger())
+		return lifecycle.Start(stage, scope)
 	}
 	switch stage {
 	case StartStateInitialize:
@@ -43,7 +50,7 @@ func (l *lifecycleServiceWrapper) Name() string {
 	return l.name
 }
 
-func (l *lifecycleServiceWrapper) Start(stage StartStage) error {
+func (l *lifecycleServiceWrapper) Start(stage StartStage, _ *Scope) error {
 	return LegacyStart(l.SimpleLifecycle, stage)
 }
 

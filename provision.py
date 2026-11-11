@@ -135,18 +135,12 @@ class HTTPPortLease:
             print('临时停止：' + ', '.join(sorted(services)) + '。网站可能暂时中断；成功/失败/正常取消后恢复，不取消开机自启。')
             print('异常断电/SIGKILL后人工恢复：systemctl start ' + ' '.join(sorted(services)))
             print('注意：仅本次部署临时释放；将来HTTP自动续签仍需TCP80空闲，长期共用请采用DNS证书。')
-            if not (release or kill):
-                if not interactive or ask('是否临时释放TCP80？输入 Y 继续，N/回车取消', 'N').lower() != 'y':
-                    raise PortError('已取消释放TCP80，原服务未修改')
         if raw:
             if not hasattr(os, 'pidfd_open') or not hasattr(signal, 'pidfd_send_signal'):
                 raise PortError('内核/Python不支持安全PID句柄；独立进程请人工停止，不使用有PID复用风险的kill')
             print('危险：独立进程无法自动恢复。将先发送TERM，5秒后仍未释放才KILL；不会终止新出现的占用者。')
-            if not kill:
-                if not interactive or ask('确认强制终止上述独立进程，输入 KILL-PORT80', '') != 'KILL-PORT80':
-                    raise PortError('未确认强制终止，原进程未修改')
-        print('已记录释放授权；只有最终输入DEPLOY后才会执行，不立即关闭进程。')
-        return cls(owners, services, bool(raw))
+        print('将自动释放TCP80；托管服务完成后恢复，独立进程仅按PID句柄终止。')
+        return cls(owners, services, True if raw else bool(kill))
 
     def release(self):
         if http_port_free():
@@ -624,8 +618,6 @@ def wizard(existing=None):
         core = cfg.choose('核心', tuple(cfg.PROTOCOLS), 'sing')
         api_host = cfg.required('面板地址').rstrip('/')
         if api_host.startswith('http://'):
-            if cfg.ask('HTTP面板会明文传输密钥，输入 INSECURE-HTTP 继续', '') != 'INSECURE-HTTP':
-                raise ProvisionError('未确认HTTP面板风险')
             insecure_panel = True
         node = {'Core': core, 'ApiHost': api_host,
                 'ApiKey': cfg.required('面板密钥（不回显）', secret=True),
@@ -682,11 +674,7 @@ def wizard(existing=None):
 
 
 def confirm_http_panel(document, allowed=False, interactive=False):
-    if allowed or not any(node.get('ApiHost', '').startswith('http://') for node in document.get('Nodes', [])):
-        return allowed
-    if interactive:
-        return cfg.ask('HTTP面板会明文传输密钥，输入 INSECURE-HTTP 继续', '') == 'INSECURE-HTTP'
-    return False
+    return allowed or any(node.get('ApiHost', '').startswith('http://') for node in document.get('Nodes', []))
 
 
 def main():
@@ -699,7 +687,7 @@ def main():
     parser.add_argument('--allow-insecure-panel', action='store_true', help='显式允许HTTP面板（密钥明文传输）')
     parser.add_argument('--release-http-port', action='store_true', help='明确允许本次签证书临时停止TCP80托管服务，完成后恢复')
     parser.add_argument('--kill-http-port', action='store_true', help='危险：允许TERM/KILL非托管TCP80占用者，无法自动恢复；同时允许临时停止托管服务')
-    parser.add_argument('--yes', action='store_true', help='确认停服务/替换/证书条款/启动')
+    parser.add_argument('--yes', action='store_true', help='兼容旧脚本；在线配置不再要求二次确认')
     parser.add_argument('--no-enable', action='store_true')
     parser.add_argument('--check-only', action='store_true')
     parser.add_argument('--advanced', action='store_true', help='使用完整协议/证书/多节点配置向导')
@@ -752,9 +740,6 @@ def main():
             print('预检完成；未写入配置、申请证书或操作服务。')
             return
         print('将停止旧节点、备份替换配置、申请/校验证书并启动。失败回滚；勿重复尝试CA错误。')
-        if not args.yes and cfg.ask('同意证书条款并部署？输入 DEPLOY', '') != 'DEPLOY':
-            print('已取消，未更改服务和配置。')
-            return
         deploy(path, document, checks, expected, args.timeout, not args.no_enable, port_lease)
 
 

@@ -29,7 +29,7 @@
 | 检查 | 结果 / 范围 |
 |---|---|
 | `go mod verify` | 模块校验通过 |
-| `scripts/check-sing-patches.py` | 官方 sing-box v1.14.1 + 13 个兼容源码变更校验通过 |
+| `scripts/check-sing-patches.py` | 官方 sing-box v1.15.0-alpha.13 + 37 个兼容源码变更校验通过 |
 | 全内核 Go 测试 | `sing xray hysteria2 with_quic with_grpc with_utls with_wireguard with_acme with_gvisor`，全包通过 |
 | 三内核生命周期 | 13 个核心/协议组合，创建/删除节点、用户增删及重新加入 |
 | 原有真实回环数据面 | Xray/VLESS、sing/VLESS、sing/Hysteria2、独立 Hysteria2；TCP echo、认证、流量、删除用户后的新连接拒绝 |

@@ -6,6 +6,7 @@ import (
 	"net/netip"
 	"os"
 	"reflect"
+	"slices"
 
 	box "github.com/sagernet/sing-box"
 	"github.com/sagernet/sing-box/adapter"
@@ -199,6 +200,14 @@ func (s *platformInterfaceStub) CreateBridge(options adapter.BridgeOptions) (ada
 	return nil, os.ErrInvalid
 }
 
+func (s *platformInterfaceStub) UsePlatformAutoRedirect() bool {
+	return false
+}
+
+func (s *platformInterfaceStub) CreateAutoRedirect(options adapter.AutoRedirectOptions) (adapter.AutoRedirectSession, error) {
+	return nil, os.ErrInvalid
+}
+
 func (s *platformInterfaceStub) LookupUser(username string) (*adapter.PlatformUser, error) {
 	return nil, os.ErrInvalid
 }
@@ -268,4 +277,14 @@ func FormatConfig(configContent string) (*StringBox, error) {
 		return nil, err
 	}
 	return wrapString(buffer.String()), nil
+}
+
+func HasTunInbound(configContent string) (bool, error) {
+	options, err := parseConfig(baseContext(nil), configContent)
+	if err != nil {
+		return false, err
+	}
+	return slices.ContainsFunc(options.Inbounds, func(inbound option.Inbound) bool {
+		return inbound.Type == C.TypeTun
+	}), nil
 }

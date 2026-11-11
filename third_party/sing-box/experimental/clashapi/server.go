@@ -21,9 +21,10 @@ import (
 	"github.com/sagernet/sing-box/experimental/clashmode"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
-	"github.com/sagernet/sing/common"
 	E "github.com/sagernet/sing/common/exceptions"
 	"github.com/sagernet/sing/common/json"
+	M "github.com/sagernet/sing/common/metadata"
+	N "github.com/sagernet/sing/common/network"
 	"github.com/sagernet/sing/service"
 	"github.com/sagernet/sing/service/filemanager"
 	"github.com/sagernet/ws"
@@ -147,7 +148,7 @@ func (s *Server) Name() string {
 	return "clash server"
 }
 
-func (s *Server) Start(stage adapter.StartStage) error {
+func (s *Server) Start(stage adapter.StartStage, scope *adapter.Scope) error {
 	if stage != adapter.StartStateStarted {
 		return nil
 	}
@@ -158,7 +159,7 @@ func (s *Server) Start(stage adapter.StartStage) error {
 			err      error
 		)
 		for range 3 {
-			listener, err = net.Listen("tcp", s.httpServer.Addr)
+			listener, err = net.Listen(M.NetworkFromNetAddr(N.NetworkTCP, M.ParseSocksaddr(s.httpServer.Addr).Addr), s.httpServer.Addr)
 			if runtime.GOOS == "android" && errors.Is(err, syscall.EADDRINUSE) {
 				time.Sleep(100 * time.Millisecond)
 				continue
@@ -168,6 +169,7 @@ func (s *Server) Start(stage adapter.StartStage) error {
 		if err != nil {
 			return E.Cause(err, "external controller listen error")
 		}
+		scope.Add(s.httpServer.Close)
 		s.logger.Info("restful api listening at ", listener.Addr())
 		go func() {
 			err = s.httpServer.Serve(listener)
@@ -177,12 +179,6 @@ func (s *Server) Start(stage adapter.StartStage) error {
 		}()
 	}
 	return nil
-}
-
-func (s *Server) Close() error {
-	return common.Close(
-		common.PtrOrNil(s.httpServer),
-	)
 }
 
 func authentication(serverSecret string) func(next http.Handler) http.Handler {

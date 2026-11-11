@@ -141,7 +141,7 @@ sys.stdout.buffer.write(zipfile.ZipFile(archive).read(member))
 
     def test_config_wizard_encodes_user_values_and_new_field_names(self):
         config_dir = self.base / 'config'
-        answers = self.node_answers(key='key"with\\nquote') + ['n', 'SAVE']
+        answers = self.node_answers(key='key"with\\nquote') + ['n']
         output = self.run_wizard(answers)
         document = json.loads((config_dir / 'config.json').read_text(encoding='utf-8'))
         node = document['Nodes'][0]
@@ -182,7 +182,7 @@ sys.stdout.buffer.write(zipfile.ZipFile(archive).read(member))
         return result.stdout
 
     def test_multinode_hysteria_and_field_isolation(self):
-        self.run_wizard(self.node_answers(core='xray') + ['y'] + self.node_answers(core='hysteria2', node_id='8') + ['n', 'SAVE'])
+        self.run_wizard(self.node_answers(core='xray') + ['y'] + self.node_answers(core='hysteria2', node_id='8') + ['n'])
         document = json.loads((self.base / 'config/config.json').read_text())
         self.assertEqual([core['Type'] for core in document['Cores']], ['xray', 'hysteria2'])
         self.assertEqual(document['Nodes'][1]['NodeType'], 'hysteria')
@@ -192,35 +192,35 @@ sys.stdout.buffer.write(zipfile.ZipFile(archive).read(member))
         self.assertEqual(list((self.base / 'config').glob('*.yaml')), [])
 
     def test_sing_hysteria2_uses_xboard_api(self):
-        self.run_wizard(self.node_answers(protocol='hysteria2') + ['n', 'SAVE'])
+        self.run_wizard(self.node_answers(protocol='hysteria2') + ['n'])
         node = json.loads((self.base / 'config/config.json').read_text())['Nodes'][0]
         self.assertEqual(node['Core'], 'sing')
         self.assertEqual(node['NodeType'], 'hysteria')
 
-    def test_cancel_overwrite_leaves_bytes_unchanged(self):
-        self.run_wizard(self.node_answers() + ['n', 'SAVE'])
+    def test_invalid_overwrite_input_leaves_bytes_unchanged(self):
+        self.run_wizard(self.node_answers() + ['n'])
         config = self.base / 'config/config.json'
         original = config.read_bytes()
-        self.run_wizard(['n'])
+        self.run_wizard(['invalid'], ok=False)
         self.assertEqual(original, config.read_bytes())
         self.assertEqual(list(config.parent.glob('*.backup.*')), [])
 
     def test_overwrite_backup_is_private_and_unique(self):
-        self.run_wizard(self.node_answers() + ['n', 'SAVE'])
+        self.run_wizard(self.node_answers() + ['n'])
         config = self.base / 'config/config.json'
         before = config.read_bytes()
-        self.run_wizard(['REPLACE'] + self.node_answers(node_id='8') + ['n', 'SAVE'])
-        self.run_wizard(['REPLACE'] + self.node_answers(node_id='9') + ['n', 'SAVE'])
+        self.run_wizard(self.node_answers(node_id='8') + ['n'])
+        self.run_wizard(self.node_answers(node_id='9') + ['n'])
         backups = list(config.parent.glob('*.backup.*'))
         self.assertEqual(len(backups), 2)
         self.assertIn(before, [p.read_bytes() for p in backups])
         self.assertTrue(all(p.stat().st_mode & 0o777 == 0o600 for p in backups))
 
     def test_eof_before_save_preserves_config(self):
-        self.run_wizard(self.node_answers() + ['n', 'SAVE'])
+        self.run_wizard(self.node_answers() + ['n'])
         config = self.base / 'config/config.json'
         before = config.read_bytes()
-        self.run_wizard(['REPLACE', 'sing'], ok=False)
+        self.run_wizard(['sing'], ok=False)
         self.assertEqual(before, config.read_bytes())
 
     def test_staging_forbids_host_service_calls(self):
@@ -237,16 +237,16 @@ sys.stdout.buffer.write(zipfile.ZipFile(archive).read(member))
         self.assertTrue(all('/shmily2-1/V2bX-2/' in url for url in urls))
         self.assertTrue((self.root / 'usr/local/lib/V2bX-2/install.sh').exists())
 
-    def test_uninstall_cancel(self):
+    def test_uninstall_does_not_prompt(self):
         self.run_bootstrap()
-        self.run_menu('uninstall', text='n\n')
-        self.assertTrue((self.root / 'usr/local/V2bX/V2bX').exists())
+        self.run_menu('uninstall')
+        self.assertFalse((self.root / 'usr/local/V2bX/V2bX').exists())
 
     def test_uninstall_preserves_configuration(self):
         self.run_bootstrap()
         config = self.root / 'etc/V2bX/config.json'
         config.write_text('private-existing-config')
-        self.run_menu('uninstall', '--keep-config', text='UNINSTALL\n')
+        self.run_menu('uninstall', '--keep-config')
         self.assertEqual(config.read_text(), 'private-existing-config')
         self.assertFalse((self.root / 'usr/local/V2bX/V2bX').exists())
 
@@ -279,18 +279,18 @@ sys.stdout.buffer.write(zipfile.ZipFile(archive).read(member))
             self.assertFalse(path.exists() or path.is_symlink(), name)
         self.assertEqual(list(self.root.rglob('*.backup.*')), [])
 
-    def test_old_confirmation_cannot_delete_private_data(self):
+    def test_old_confirmation_words_are_ignored(self):
         private = self.seed_private_installation()
         output = self.run_menu('uninstall', text='UNINSTALL\n')
-        self.assertIn('已取消', output)
-        for name, value in private.items():
-            self.assertEqual((self.root / name).read_text(), value)
-        self.assertTrue((self.root / 'usr/local/V2bX/V2bX').exists())
+        self.assertIn('已彻底卸载', output)
+        for name in private:
+            self.assertFalse((self.root / name).exists(), name)
+        self.assertFalse((self.root / 'usr/local/V2bX/V2bX').exists())
 
     def test_same_menu_uninstall_reinstall_enters_first_multinode_wizard(self):
         self.seed_private_installation()
-        answers = (['3', 'UNINSTALL-ALL', '1'] + self.node_answers(node_id='21') + ['Y']
-                   + self.node_answers(core='xray', node_id='22') + ['N', 'SAVE', '17'])
+        answers = (['3', '1'] + self.node_answers(node_id='21') + ['Y']
+                   + self.node_answers(core='xray', node_id='22') + ['N', '17'])
         output = self.run_menu('menu', text='\n'.join(answers) + '\n')
         self.assertNotIn('操作失败', output)
         self.assertNotIn('No such file or directory', output)
@@ -340,13 +340,12 @@ sys.stdout.buffer.write(zipfile.ZipFile(archive).read(member))
         self.run_menu('install', 'v1/../../other', ok=False)
         self.assertEqual(self.log.read_bytes(), before)
 
-    def test_install_always_reenters_wizard_but_cancel_preserves_config(self):
+    def test_install_reenters_wizard_and_eof_preserves_config(self):
         self.run_bootstrap()
         config = self.root / 'etc/V2bX/config.json'
         config.write_text('private-existing-config')
-        output = self.run_menu('install', text='n\n')
+        output = self.run_menu('install', text='', ok=False)
         self.assertIn('首次安装配置指引', output)
-        self.assertIn('已取消', output)
         self.assertEqual(config.read_text(), 'private-existing-config')
 
     def test_full_uninstall_does_not_follow_shared_certificate_symlinks(self):

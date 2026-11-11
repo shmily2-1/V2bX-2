@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/shmily2-1/V2bX-2/common/exec"
 	"github.com/spf13/cobra"
@@ -36,13 +35,7 @@ func init() {
 }
 
 func uninstallHandle(_ *cobra.Command, _ []string) {
-	var yes string
-	fmt.Println(Warn("确定要卸载 V2bX 吗?(Y/n)"))
-	fmt.Scan(&yes)
-	if strings.ToLower(yes) != "y" {
-		fmt.Println("已取消卸载")
-		return
-	}
+	fmt.Println(Warn("正在卸载 V2bX"))
 	_, err := exec.RunCommandByShell("systemctl stop V2bX&&systemctl disable V2bX")
 	if err != nil {
 		fmt.Println(Err("exec cmd error: ", err))

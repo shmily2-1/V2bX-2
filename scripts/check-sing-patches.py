@@ -13,7 +13,7 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 EMBEDDED = ROOT / "third_party" / "sing-box"
 MANIFEST = ROOT / "third_party" / "sing-box-patches.json"
-VERSION = "v1.14.1"
+VERSION = "v1.15.0-alpha.13"
 OMIT = {".github", "docs", "release", "test", ".gitignore", ".goreleaser.yaml", "mkdocs.yml"}
 
 
