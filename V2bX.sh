@@ -2,7 +2,7 @@
 # Original-style V2bX management menu, adapted from wyx2685/V2bX-script (MPL-2.0).
 # Installed as /usr/bin/V2bX and /usr/local/bin/v2bx. No upstream downloads.
 set -euo pipefail
-script_ref=v0.1.0-core-upgrade.13
+script_ref=v0.1.0-core-upgrade.14
 root=
 if [[ ${1:-} == --root ]]; then
   [[ $# -ge 3 && $2 =~ ^/[a-zA-Z0-9_./-]+$ ]] || { echo 'Invalid --root' >&2; exit 2; }
@@ -74,6 +74,12 @@ generate() {
   else
     bash "$state/initconfig.sh" "$@"
   fi
+}
+node_action() {
+  local action=$1
+  shift
+  root_only; host_only
+  python3 "$state/provision.py" --config "$config" --node-action "$action" "$@"
 }
 edit() {
   root_only
@@ -246,6 +252,9 @@ V2bX-2 管理命令（兼容原项目，v2bx 始终指向菜单）：
   v2bx update [v版本]        仅更新程序及菜单，不重新配置/启动
   v2bx update_shell [v版本]   从同一 Release 重装/升级程序及管理组件
   v2bx config|generate       在线预检、证书申请、备份配置并启动验证
+  v2bx node-add              新增一个节点并部署
+  v2bx node-manage           查看或修改节点
+  v2bx node-remove           移除一个节点并部署剩余节点
   v2bx generate --offline    仅生成配置，不连接面板或启动服务
   v2bx generate --advanced   完整协议/证书/多节点配置向导
   v2bx start|stop|restart     启停服务，错误不会被忽略
@@ -272,6 +281,7 @@ dispatch() {
     start|stop|restart|enable|disable) control "$command" ;;
     status) status ;;
     config) edit "$@" ;; generate) generate "$@" ;; uninstall) uninstall "$@" ;;
+    node-add) node_action add "$@" ;; node-manage) node_action manage "$@" ;; node-remove) node_action remove "$@" ;;
     bbr|open-ports) root_only; host_only; python3 "$state/system-tools.py" "$command" ;;
     log) host_only; journalctl -u V2bX.service -e --no-pager -f ;;
     version|x25519) find_binary; "$binary" "$command" "$@" ;;
@@ -314,16 +324,21 @@ menu() {
 15. 生成 V2bX 配置文件
 16. 放行 VPS 的所有网络端口
 17. 退出脚本
+18. 新增节点
+19. 节点管理
+20. 移除节点
 MENU
     printf 'V2bX状态: %s\n是否开机自启: %s\n\n' "$service_state" "$autostart"
-    read -r -p '请输入选择 [0-17]：' choice || return 0
+    read -r -p '请输入选择 [0-20]：' choice || return 0
     case $choice in
       0) action=config ;; 1) action=install ;; 2) action=update ;; 3) action=uninstall ;;
       4) action=start ;; 5) action=stop ;; 6) action=restart ;; 7) action=status ;;
       8) action=log ;; 9) action=enable ;; 10) action=disable ;;
       11) action=bbr ;;
       12) action=version ;; 13) action=x25519 ;; 14) action=update_shell ;;
-      15) action=generate ;; 16) action=open-ports ;; 17) return 0 ;; *) echo '无效选项'; continue ;;
+      15) action=generate ;; 16) action=open-ports ;; 17) return 0 ;;
+      18) action=node-add ;; 19) action=node-manage ;; 20) action=node-remove ;;
+      *) echo '无效选项'; continue ;;
     esac
     # A subshell retains errexit for each action. Do not suppress failures via an if/function call.
     set +e

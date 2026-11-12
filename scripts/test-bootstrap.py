@@ -112,7 +112,7 @@ sys.stdout.buffer.write(zipfile.ZipFile(archive).read(member))
         output = self.run_menu('menu', text='12\n17\n')
         self.assertIn('fixture V2bX', output)
         self.assertNotIn('操作失败', output)
-        for label in ('8. 查看 V2bX 日志', '9. 设置 V2bX 开机自启', '10. 取消 V2bX 开机自启', '16. 放行 VPS'):
+        for label in ('8. 查看 V2bX 日志', '9. 设置 V2bX 开机自启', '10. 取消 V2bX 开机自启', '16. 放行 VPS', '18. 新增节点', '19. 节点管理', '20. 移除节点'):
             self.assertIn(label, output)
 
     def test_isolated_menu_uses_recorded_binary(self):

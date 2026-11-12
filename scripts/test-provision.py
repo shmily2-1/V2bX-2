@@ -136,6 +136,24 @@ class ProvisionTests(unittest.TestCase):
         self.assertEqual(document['Nodes'][0], self.node)
         self.assertEqual([core['Type'] for core in document['Cores']], ['sing', 'xray'])
 
+    def test_add_node_document_adds_one_node_without_batch_prompt(self):
+        with patch('builtins.input', side_effect=self.quick_answers(core='xray', node_id='2')) as ask:
+            document = p.add_node_document(self.document)
+        self.assertEqual([node['NodeID'] for node in document['Nodes']], [1, 2])
+        self.assertEqual(ask.call_count, 4)
+
+    def test_remove_node_document_keeps_remaining_node_and_core(self):
+        second = copy.deepcopy(self.node)
+        second.update(Core='xray', NodeID=2, ApiHost='https://other.example.test', NodeType='vless')
+        document = {'Cores': [{'Type': 'sing'}, {'Type': 'xray'}], 'Nodes': [self.node, second]}
+        result = p.remove_node_document(document, 0)
+        self.assertEqual([node['NodeID'] for node in result['Nodes']], [2])
+        self.assertEqual([core['Type'] for core in result['Cores']], ['xray'])
+
+    def test_remove_last_node_is_rejected(self):
+        with self.assertRaisesRegex(p.ProvisionError, '至少保留一个节点'):
+            p.remove_node_document(self.document, 0)
+
     def test_quick_deploy_preflights_and_deploys_all_nodes_together(self):
         answers = self.quick_answers(node_id='1') + ['Y'] + self.quick_answers(node_id='2') + ['N']
         with patch('builtins.input', side_effect=answers):

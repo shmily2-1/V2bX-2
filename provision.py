@@ -552,11 +552,15 @@ def quick_wizard(existing=None):
     return document
 
 
-def quick_add_node(document, core):
+def quick_add_node(document, core, seed=None):
     """Read one node's fields, probe its panel, and merge it into document."""
-    host = cfg.required('面板地址').rstrip('/')
-    key = cfg.required('面板密钥（不回显）', secret=True)
-    raw_id = cfg.required('节点ID')
+    seed = seed or {}
+    host = cfg.ask('面板地址', seed.get('ApiHost') or None).rstrip('/')
+    key = cfg.ask('面板密钥（不回显，留空保留原值）', secret=True) if seed else cfg.required('面板密钥（不回显）', secret=True)
+    key = key or seed.get('ApiKey', '')
+    if not key:
+        raise ProvisionError('面板密钥不能为空')
+    raw_id = cfg.ask('节点ID', str(seed['NodeID']) if seed else None)
     if not cfg.valid_host(host) or not raw_id.isascii() or not raw_id.isdigit() or not 0 < int(raw_id) <= 2147483647:
         raise ProvisionError('面板地址或节点ID无效')
     candidates = [n for n in document['Nodes'] if n.get('ApiHost', '').rstrip('/') == host and n.get('NodeID') == int(raw_id)]
@@ -608,6 +612,83 @@ def quick_add_node(document, core):
         document['Nodes'][document['Nodes'].index(previous)] = node
     if not any(c.get('Type') == core for c in document['Cores']):
         document['Cores'].append({'Type': core, 'Log': {'Level': 'info'}})
+
+
+def add_node_document(existing):
+    document = copy.deepcopy(existing) if existing is not None else {'Log': {'Level': 'info'}, 'Cores': [], 'Nodes': []}
+    if existing is not None:
+        cfg.validate(existing)
+    core = cfg.choose('核心', tuple(cfg.PROTOCOLS), 'sing')
+    quick_add_node(document, core)
+    cfg.validate(document)
+    return document
+
+
+def node_view(node, index):
+    api = node.get('ApiConfig', node)
+    options = node.get('Options', node)
+    cert = options.get('CertConfig', {}) or {}
+    print('%d. 核心=%s  面板=%s  NodeID=%s  类型=%s' % (
+        index + 1, options.get('Core', '-'), api.get('ApiHost', '-'), api.get('NodeID', '-'), api.get('NodeType', '-')))
+    print('   监听=%s  证书域名=%s  伪装站点=%s' % (
+        options.get('ListenIP', '0.0.0.0'), cert.get('CertDomain', '-') or '-',
+        options.get('Hysteria2MasqueradeURL', '-') or '-'))
+
+
+def list_nodes(document):
+    print('========== 节点列表（不显示面板密钥） ==========')
+    for index, node in enumerate(document['Nodes']):
+        node_view(node, index)
+
+
+def select_node(document, prompt='节点编号（0返回）'):
+    list_nodes(document)
+    raw = cfg.ask(prompt, '0')
+    if raw == '0':
+        return None
+    if not raw.isdigit() or not 1 <= int(raw) <= len(document['Nodes']):
+        raise ProvisionError('节点编号无效')
+    return int(raw) - 1
+
+
+def remove_node_document(document, index):
+    if len(document['Nodes']) <= 1:
+        raise ProvisionError('至少保留一个节点；如需彻底停止请使用卸载或重新配置')
+    result = copy.deepcopy(document)
+    removed = result['Nodes'].pop(index)
+    used = {node.get('Core') for node in result['Nodes']}
+    result['Cores'] = [core for core in result['Cores'] if core.get('Type') in used]
+    cfg.validate(result)
+    print('已移除节点：面板=%s NodeID=%s。相关证书文件保留，不自动删除。' % (
+        removed.get('ApiHost', '-'), removed.get('NodeID', '-')))
+    return result
+
+
+def manage_nodes(existing):
+    document = copy.deepcopy(existing)
+    cfg.validate(document)
+    index = select_node(document)
+    if index is None:
+        return document, False
+    node = copy.deepcopy(document['Nodes'][index])
+    node_view(node, index)
+    action = cfg.ask('节点操作（1查看/2修改/0返回）', '1')
+    if action == '1':
+        return document, False
+    if action != '2':
+        if action == '0':
+            return document, False
+        raise ProvisionError('节点操作无效')
+    core = cfg.choose('核心', tuple(cfg.PROTOCOLS), node.get('Core', 'sing'))
+    working = copy.deepcopy(document)
+    working['Nodes'].pop(index)
+    quick_add_node(working, core, seed=node)
+    if len(working['Nodes']) != len(document['Nodes']):
+        raise ProvisionError('修改目标与现有节点冲突，请保持面板地址和节点ID不变或先移除冲突节点')
+    replacement = working['Nodes'].pop()
+    working['Nodes'].insert(index, replacement)
+    cfg.validate(working)
+    return working, True
 
 
 def quick_deploy(path, document, expected, args):
@@ -721,6 +802,7 @@ def main():
     parser.add_argument('--no-enable', action='store_true')
     parser.add_argument('--check-only', action='store_true')
     parser.add_argument('--advanced', action='store_true', help='使用完整协议/证书/多节点配置向导')
+    parser.add_argument('--node-action', choices=('add', 'manage', 'remove'), help='节点管理动作')
     parser.add_argument('--timeout', type=int, default=240)
     args = parser.parse_args()
     if os.name != 'posix' or fcntl is None or os.geteuid() != 0 or not Path('/run/systemd/system').is_dir():
@@ -755,6 +837,25 @@ def main():
                 document = cfg.read_document(draft)
         else:
             existing = cfg.read_document(path) if expected is not None else None
+            if args.node_action:
+                if args.node_action == 'add':
+                    document = add_node_document(existing)
+                    quick_deploy(path, document, expected, args)
+                    return
+                if existing is None:
+                    raise ProvisionError('缺少配置，请先执行 v2bx generate')
+                if args.node_action == 'manage':
+                    document, changed = manage_nodes(existing)
+                    if not changed:
+                        return
+                else:
+                    document = cfg.read_document(path)
+                    index = select_node(document)
+                    if index is None:
+                        return
+                    document = remove_node_document(document, index)
+                quick_deploy(path, document, expected, args)
+                return
             if not args.advanced:
                 document = quick_wizard(existing)
                 quick_deploy(path, document, expected, args)
