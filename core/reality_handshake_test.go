@@ -77,8 +77,10 @@ func TestRealityHandshakeInteroperability(t *testing.T) {
 						},
 					},
 				}
+				xrayConfig := conf.NewXrayConfig()
+				xrayConfig.LogConfig.Level = "debug"
 				engine, err := core.NewCore([]conf.CoreConfig{{
-					Type: serverCore, SingConfig: conf.NewSingConfig(), XrayConfig: conf.NewXrayConfig(),
+					Type: serverCore, SingConfig: conf.NewSingConfig(), XrayConfig: xrayConfig,
 				}})
 				if err != nil {
 					t.Fatal(err)
@@ -131,7 +133,7 @@ func TestRealityHandshakeInteroperability(t *testing.T) {
 						return err
 					}
 					defer proxy.Close()
-					payload := []byte("local-reality-authenticated-echo")
+					payload := bytes.Repeat([]byte("local-reality-authenticated-echo"), 32)
 					if _, err := proxy.Write(payload); err != nil {
 						return err
 					}
