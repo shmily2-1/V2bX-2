@@ -118,7 +118,7 @@ func TestRealityHandshakeInteroperability(t *testing.T) {
 					}
 					defer raw.Close()
 					raw.SetDeadline(time.Now().Add(5 * time.Second))
-					conn, err := config.ClientHandshake(context.Background(), raw)
+					conn, err := singTLS.ClientHandshake(context.Background(), raw, config)
 					if err != nil {
 						return err
 					}
