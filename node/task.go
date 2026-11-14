@@ -6,7 +6,6 @@ import (
 	"github.com/shmily2-1/V2bX-2/api/panel"
 	"github.com/shmily2-1/V2bX-2/common/task"
 	vCore "github.com/shmily2-1/V2bX-2/core"
-	"github.com/shmily2-1/V2bX-2/limiter"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -46,10 +45,16 @@ func (c *Controller) startTasks(node *panel.NodeInfo) {
 			Execute:  c.SpeedChecker,
 		}
 		log.Printf("[%s: %d] Start dynamic speed limit", c.apiClient.NodeType, c.apiClient.NodeId)
+		_ = c.dynamicSpeedLimitPeriodic.Start(false)
 	}
 }
 
 func (c *Controller) nodeInfoMonitor() (err error) {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+	if c.closed {
+		return nil
+	}
 	// get node info
 	newN, err := c.apiClient.GetNodeInfo()
 	if err != nil {
@@ -58,6 +63,9 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 			"err": err,
 		}).Error("Get node info failed")
 		return nil
+	}
+	if newN != nil {
+		c.pendingNodeInfo = newN
 	}
 	// get user info
 	newU, err := c.apiClient.GetUserList()
@@ -71,7 +79,10 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 	// A nil user list is an HTTP 304, not an empty authorization list.
 	// Keep the current list so a config refresh cannot revoke users by accident.
 	if newU == nil {
-		newU = c.userList
+		newU = c.apiClient.UserList.Users
+		if newU == nil {
+			newU = c.userList
+		}
 	}
 	// get user alive
 	newA, err := c.apiClient.GetUserAlive()
@@ -82,98 +93,26 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 		}).Error("Get alive list failed")
 		return nil
 	}
-	if newN != nil {
-		c.info = newN
-		// nodeInfo changed
-		if newU != nil {
-			c.userList = newU
+	if c.pendingNodeInfo != nil {
+		if err := c.replaceNode(c.pendingNodeInfo, newU, newA); err != nil {
+			log.WithError(err).WithField("tag", c.tag).Error("Node reload failed; will retry")
+		} else {
+			c.pendingNodeInfo = nil
 		}
-		c.traffic = make(map[string]int64)
-		// Remove old node
-		log.WithField("tag", c.tag).Info("Node changed, reload")
-		err = c.server.DelNode(c.tag)
-		if err != nil {
-			log.WithFields(log.Fields{
-				"tag": c.tag,
-				"err": err,
-			}).Panic("Delete node failed")
-			return nil
-		}
-
-		// Update limiter
-		if len(c.Options.Name) == 0 {
-			c.tag = c.buildNodeTag(newN)
-			// Remove Old limiter
-			limiter.DeleteLimiter(c.tag)
-			// Add new Limiter
-			l := limiter.AddLimiter(c.tag, &c.LimitConfig, c.userList, newA)
-			c.limiter = l
-		}
-		// update alive list
-		if newA != nil {
-			c.limiter.AliveList = newA
-		}
-		// Update rule
-		err = c.limiter.UpdateRule(&newN.Rules)
-		if err != nil {
-			log.WithFields(log.Fields{
-				"tag": c.tag,
-				"err": err,
-			}).Error("Update Rule failed")
-			return nil
-		}
-
-		// check cert
-		if newN.Security == panel.Tls {
-			err = c.requestCert()
-			if err != nil {
-				log.WithFields(log.Fields{
-					"tag": c.tag,
-					"err": err,
-				}).Error("Request cert failed")
-				return nil
-			}
-		}
-		// add new node
-		err = c.server.AddNode(c.tag, newN, c.Options)
-		if err != nil {
-			log.WithFields(log.Fields{
-				"tag": c.tag,
-				"err": err,
-			}).Panic("Add node failed")
-			return nil
-		}
-		_, err = c.addAuthorizedUsers(newN)
-		if err != nil {
-			log.WithFields(log.Fields{
-				"tag": c.tag,
-				"err": err,
-			}).Error("Add users failed")
-			return nil
-		}
-		// Check interval
-		if c.nodeInfoMonitorPeriodic.Interval != newN.PullInterval &&
-			newN.PullInterval != 0 {
-			c.nodeInfoMonitorPeriodic.Interval = newN.PullInterval
-			c.nodeInfoMonitorPeriodic.Close()
-			_ = c.nodeInfoMonitorPeriodic.Start(false)
-		}
-		if c.userReportPeriodic.Interval != newN.PushInterval &&
-			newN.PushInterval != 0 {
-			c.userReportPeriodic.Interval = newN.PushInterval
-			c.userReportPeriodic.Close()
-			_ = c.userReportPeriodic.Start(false)
-		}
-		log.WithField("tag", c.tag).Infof("Added %d new users", len(c.userList))
-		// exit
 		return nil
 	}
 	// update alive list
 	if newA != nil {
-		c.limiter.AliveList = newA
+		c.limiter.SetAliveList(newA)
 	}
 	// node no changed, check users; a non-nil empty list revokes every user.
 	deleted, added := compareUserList(c.userList, newU)
+	if len(deleted) > 0 {
+		if _, err := c.collectTraffic(); err != nil {
+			log.WithError(err).Error("Persist traffic before user update failed")
+			return nil
+		}
+	}
 	if len(deleted) > 0 {
 		// have deleted users
 		err = c.server.DelUsers(deleted, c.tag, c.info)
@@ -182,6 +121,9 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 				"tag": c.tag,
 				"err": err,
 			}).Error("Delete users failed")
+			if restoreErr := c.replaceNode(c.info, c.userList, newA); restoreErr != nil {
+				log.WithError(restoreErr).Error("Restore users failed")
+			}
 			return nil
 		}
 	}
@@ -197,6 +139,9 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 				"tag": c.tag,
 				"err": err,
 			}).Error("Add users failed")
+			if restoreErr := c.replaceNode(c.info, c.userList, newA); restoreErr != nil {
+				log.WithError(restoreErr).Error("Restore users failed")
+			}
 			return nil
 		}
 	}
@@ -226,14 +171,28 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 }
 
 func (c *Controller) SpeedChecker() error {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+	if c.closed {
+		return nil
+	}
+	if !c.LimitConfig.EnableDynamicSpeedLimit || c.LimitConfig.DynamicSpeedLimitConfig == nil {
+		return nil
+	}
+	if _, err := c.collectTraffic(); err != nil {
+		log.WithError(err).Error("Collect traffic for dynamic speed limit failed")
+		return nil
+	}
 	for u, t := range c.traffic {
 		if t >= c.LimitConfig.DynamicSpeedLimitConfig.Traffic {
 			err := c.limiter.UpdateDynamicSpeedLimit(c.tag, u,
 				c.LimitConfig.DynamicSpeedLimitConfig.SpeedLimit,
 				time.Now().Add(time.Duration(c.LimitConfig.DynamicSpeedLimitConfig.ExpireTime)*time.Minute))
-			log.WithField("err", err).Error("Update dynamic speed limit failed")
-			delete(c.traffic, u)
+			if err != nil {
+				log.WithError(err).Error("Update dynamic speed limit failed")
+			}
 		}
 	}
+	c.traffic = make(map[string]int64)
 	return nil
 }

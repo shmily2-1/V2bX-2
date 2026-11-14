@@ -1,14 +1,19 @@
 package cmd
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"os"
 	"os/signal"
 	"runtime"
+	"sync"
 	"syscall"
 
 	"github.com/shmily2-1/V2bX-2/conf"
 	vCore "github.com/shmily2-1/V2bX-2/core"
 	"github.com/shmily2-1/V2bX-2/limiter"
+	"github.com/shmily2-1/V2bX-2/localservice"
 	"github.com/shmily2-1/V2bX-2/node"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -20,108 +25,178 @@ var (
 )
 
 var serverCommand = cobra.Command{
-	Use:   "server",
-	Short: "Run V2bX server",
-	Run:   serverHandle,
-	Args:  cobra.NoArgs,
+	Use: "server", Short: "Run V2bX server",
+	RunE: serverHandle, Args: cobra.NoArgs,
 }
 
 func init() {
-	serverCommand.PersistentFlags().
-		StringVarP(&config, "config", "c",
-			"/etc/V2bX/config.json", "config file path")
-	serverCommand.PersistentFlags().
-		BoolVarP(&watch, "watch", "w",
-			true, "watch file path change")
+	serverCommand.PersistentFlags().StringVarP(&config, "config", "c", "/etc/V2bX/config.json", "config file path")
+	serverCommand.PersistentFlags().BoolVarP(&watch, "watch", "w", true, "watch file path change")
 	command.AddCommand(&serverCommand)
 }
 
-func serverHandle(_ *cobra.Command, _ []string) {
+type serverRuntime struct {
+	services *localservice.Manager
+	config   *conf.Conf
+	core     vCore.Core
+	nodes    *node.Node
+}
+
+func prepareRuntime(c *conf.Conf) (state *serverRuntime, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("core construction failed: %v", recovered)
+			state = nil
+		}
+	}()
+	if err := c.Validate(); err != nil {
+		return nil, err
+	}
+	var engine vCore.Core
+	if len(c.CoresConfig) > 0 {
+		engine, err = vCore.NewCore(c.CoresConfig)
+		if err != nil {
+			return nil, err
+		}
+	}
+	state = &serverRuntime{config: c, core: engine, nodes: node.New()}
+	if c.LocalServiceDir != "" {
+		if _, err := localservice.LoadSpecs(c); err != nil {
+			return nil, err
+		}
+		state.services = localservice.New(c)
+	}
+	return state, nil
+}
+
+func (s *serverRuntime) start() error {
+	if s.core != nil {
+		if err := s.core.Start(); err != nil {
+			_ = s.core.Close()
+			return err
+		}
+	}
+	if err := s.nodes.Start(s.config.NodeConfig, s.core); err != nil {
+		if s.core != nil {
+			_ = s.core.Close()
+		}
+		return err
+	}
+	if s.services != nil {
+		if err := s.services.Start(); err != nil {
+			_ = s.nodes.Close()
+			if s.core != nil {
+				_ = s.core.Close()
+			}
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *serverRuntime) close() error {
+	var serviceErr, coreErr error
+	if s.services != nil {
+		serviceErr = s.services.Close()
+	}
+	nodeErr := s.nodes.Close()
+	if s.core != nil {
+		coreErr = s.core.Close()
+	}
+	return errors.Join(serviceErr, nodeErr, coreErr)
+}
+
+func replaceRuntime(current **serverRuntime, candidate *conf.Conf) error {
+	return replaceRuntimeWith(current, candidate, prepareRuntime)
+}
+
+func replaceRuntimeWith(current **serverRuntime, candidate *conf.Conf, prepare func(*conf.Conf) (*serverRuntime, error)) error {
+	next, err := prepare(candidate)
+	if err != nil {
+		return err
+	}
+	previous := (*current).config
+	closeErr := (*current).close()
+	if closeErr == nil {
+		if err = next.start(); err == nil {
+			*current = next
+			return nil
+		}
+	} else {
+		err = closeErr
+		if next.core != nil {
+			_ = next.core.Close()
+		}
+	}
+	restored, restoreErr := prepare(previous)
+	if restoreErr == nil {
+		restoreErr = restored.start()
+	}
+	if restoreErr != nil {
+		return errors.Join(err, fmt.Errorf("restore previous runtime: %w", restoreErr))
+	}
+	*current = restored
+	return fmt.Errorf("candidate rejected, previous runtime restored: %w", err)
+}
+
+func serverHandle(_ *cobra.Command, _ []string) (result error) {
 	showVersion()
 	c := conf.New()
-	err := c.LoadFromPath(config)
-	if err != nil {
-		log.WithField("err", err).Error("Load config file failed")
-		return
+	if err := c.LoadFromPath(config); err != nil {
+		return err
 	}
-	switch c.LogConfig.Level {
-	case "debug":
-		log.SetLevel(log.DebugLevel)
-	case "info":
-		log.SetLevel(log.InfoLevel)
-	case "warn":
-		log.SetLevel(log.WarnLevel)
-	case "error":
-		log.SetLevel(log.ErrorLevel)
+	if level, err := log.ParseLevel(c.LogConfig.Level); err == nil {
+		log.SetLevel(level)
 	}
 	if c.LogConfig.Output != "" {
 		f, err := os.OpenFile(c.LogConfig.Output, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 		if err != nil {
-			log.WithField("err", err).Error("Open log file failed, using stdout instead")
+			log.WithError(err).Error("Open log file failed, keeping current log output")
+		} else {
+			previous := log.StandardLogger().Out
+			log.SetOutput(f)
+			defer func() { log.SetOutput(previous); f.Close() }()
 		}
-		log.SetOutput(f)
 	}
 	limiter.Init()
-	log.Info("Start V2bX...")
-	vc, err := vCore.NewCore(c.CoresConfig)
+	current, err := prepareRuntime(c)
 	if err != nil {
-		log.WithField("err", err).Error("new core failed")
-		return
+		return err
 	}
-	err = vc.Start()
-	if err != nil {
-		log.WithField("err", err).Error("Start core failed")
-		return
-	}
-	defer vc.Close()
-	log.Info("Core ", vc.Type(), " started")
-	nodes := node.New()
-	err = nodes.Start(c.NodeConfig, vc)
-	if err != nil {
-		log.WithField("err", err).Error("Run nodes failed")
-		return
+	if err := current.start(); err != nil {
+		return err
 	}
 	log.Info("Nodes started")
-	xdns := os.Getenv("XRAY_DNS_PATH")
-	sdns := os.Getenv("SING_DNS_PATH")
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+	var access sync.Mutex
+	defer func() {
+		cancel()
+		access.Lock()
+		defer access.Unlock()
+		if err := current.close(); err != nil {
+			log.WithError(err).Error("Close runtime failed")
+			result = errors.Join(result, err)
+		}
+	}()
 	if watch {
-		err = c.Watch(config, xdns, sdns, func() {
-			nodes.Close()
-			err = vc.Close()
-			if err != nil {
-				log.WithField("err", err).Error("Restart node failed")
-				return
+		err = c.WatchContext(ctx, config, os.Getenv("XRAY_DNS_PATH"), os.Getenv("SING_DNS_PATH"), func(candidate *conf.Conf) error {
+			access.Lock()
+			defer access.Unlock()
+			if err := ctx.Err(); err != nil {
+				return err
 			}
-			vc, err = vCore.NewCore(c.CoresConfig)
-			if err != nil {
-				log.WithField("err", err).Error("New core failed")
-				return
+			if err := replaceRuntime(&current, candidate); err != nil {
+				return err
 			}
-			err = vc.Start()
-			if err != nil {
-				log.WithField("err", err).Error("Start core failed")
-				return
-			}
-			log.Info("Core ", vc.Type(), " restarted")
-			err = nodes.Start(c.NodeConfig, vc)
-			if err != nil {
-				log.WithField("err", err).Error("Run nodes failed")
-				return
-			}
-			log.Info("Nodes restarted")
 			runtime.GC()
+			return nil
 		})
 		if err != nil {
-			log.WithField("err", err).Error("start watch failed")
-			return
+			return err
 		}
 	}
-	// clear memory
 	runtime.GC()
-	// wait exit signal
-	{
-		osSignals := make(chan os.Signal, 1)
-		signal.Notify(osSignals, syscall.SIGINT, syscall.SIGTERM)
-		<-osSignals
-	}
+	<-ctx.Done()
+	return nil
 }

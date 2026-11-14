@@ -7,6 +7,7 @@ import (
 )
 
 type WireGuardEndpointOptions struct {
+	DisableFlow  bool                             `json:"disable_flow,omitempty"`
 	System       bool                             `json:"system,omitempty"`
 	Name         string                           `json:"name,omitempty"`
 	MTU          uint32                           `json:"mtu,omitempty"`

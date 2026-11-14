@@ -1,3 +1,26 @@
+# v0.1.0-core-upgrade.16：扩展协议、本地服务与 Peer 管理
+
+本版本为预发布验收版，包含 P0–P5 协议适配和配套 Xboard 交互能力；保留现有锁定内核与依赖版本。
+
+- 补全 TLS/ECH、REALITY、传输选项和配置校验，修复用户增删、热更新、连接计量及任务退出行为。
+- 接入 HTTP/Mixed 独立用户凭据、撤销、计量及客户端导出；支持 VLESS/XDRIVE、MASQUE H2/H3。
+- 新增 Tunnel/TUN、WireGuard Peer 管理、持久化地址分配、原生流量计量及私有客户端配置导出。
+- 增加独立 AmneziaWG、MTProto 后端适配、进程/健康状态检查和按 UID 计量。
+- 配套 Xboard 流量批次确认与恢复，增加服务应用代次和 WireGuard 私钥文件生成功能。原版 Xboard 不自动获得新管理界面，需另行应用面板适配。
+- 一键入口、适配安装器和管理器统一固定本标签，从同一 SHA256 校验包更新。已有配置、证书、Peer 地址及计量状态保留；更新不自动重启进程。
+
+验证覆盖 Go 回归、回环真实数据面、独立 Linux 网络命名空间服务测试和安装器回归；云端 CI 通过后才生成四个平台构建包。本次不部署生产节点、不申请公网证书。
+
+AmneziaWG / MTProto 后端程序需单独准备；TUN 需要 Linux 与相应网络权限。安装器不自动部署外部后端或设置宿主 NAT，XDRIVE 公网存储互通和生产长期负载仍需按实际环境验收。
+
+配置与边界见 [P0/P1 说明](PROTOCOL-ADAPTATION-P0-P1.md)、[P2–P5 说明](PROTOCOL-ADAPTATION-P2-P5.md)和[安装指南](INSTALL.md)。
+
+~~~bash
+wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/main/install.sh && bash install.sh
+~~~
+
+---
+
 # v0.1.0-core-upgrade.15：REALITY 客户端握手兼容修复
 
 内嵌 sing-box 不再无条件删除完整的 X25519MLKEM768 曲线和 key share；不完整配对仍会清理，保留原有独立 X25519 认证密钥。修复作用于 V2bX 内的 REALITY 出站，不会替外部手机/路由器客户端更新内核。

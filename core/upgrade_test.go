@@ -58,6 +58,8 @@ func TestUpgradedCoreLifecycle(t *testing.T) {
 						AnyTls:      &panel.AnyTlsNode{},
 						Hysteria:    &panel.HysteriaNode{UpMbps: 100, DownMbps: 100},
 						Hysteria2:   &panel.Hysteria2Node{},
+						HTTP:        &panel.HTTPNode{},
+						Masque:      &panel.MasqueNode{Address: []string{"10.197.0.1/24"}, Path: "/lifecycle"},
 					}
 					if cfg.Type == "xray" {
 						// Xray uses port 0 to select Unix sockets, not ephemeral TCP.
@@ -76,8 +78,8 @@ func TestUpgradedCoreLifecycle(t *testing.T) {
 						t.Fatal(err)
 					}
 					users := []panel.UserInfo{
-						{Id: 1001, Uuid: "d05c113b-1547-481a-8ac5-3903f56ab14a"},
-						{Id: 2002, Uuid: "8211e2bb-3d22-4473-bfd4-a3bc38f12353"},
+						{Id: 1001, Uuid: "d05c113b-1547-481a-8ac5-3903f56ab14a", Password: "test-lifecycle-1"},
+						{Id: 2002, Uuid: "8211e2bb-3d22-4473-bfd4-a3bc38f12353", Password: "test-lifecycle-2"},
 					}
 					if n, err := engine.AddUsers(&core.AddUsersParams{Tag: tag, NodeInfo: info, Users: users}); err != nil || n != 2 {
 						t.Fatalf("add users: n=%d err=%v", n, err)

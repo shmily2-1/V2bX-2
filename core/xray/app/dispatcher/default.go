@@ -5,11 +5,13 @@ package dispatcher
 import (
 	"context"
 	"fmt"
+	"github.com/juju/ratelimit"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/shmily2-1/V2bX-2/common/counter"
+	"github.com/shmily2-1/V2bX-2/common/format"
 	"github.com/shmily2-1/V2bX-2/common/rate"
 	"github.com/shmily2-1/V2bX-2/limiter"
 
@@ -33,6 +35,17 @@ import (
 )
 
 var errSniffingTimeout = errors.New("timeout on sniffing")
+
+// Keep MASQUE wire credentials separate from node-scoped accounting names.
+func accountingUser(in *session.Inbound) *protocol.MemoryUser {
+	u := in.User
+	if u != nil && in.Name == "masque" {
+		copy := *u
+		copy.Email = format.UserTag(in.Tag, u.Email)
+		return &copy
+	}
+	return u
+}
 
 type cachedReader struct {
 	sync.Mutex
@@ -101,13 +114,26 @@ func (r *cachedReader) Interrupt() {
 
 // DefaultDispatcher is a default implementation of Dispatcher.
 type DefaultDispatcher struct {
-	ohm          outbound.Manager
-	router       routing.Router
-	policy       policy.Manager
-	stats        stats.Manager
-	fdns         dns.FakeDNSEngine
-	Counter      sync.Map
-	LinkManagers sync.Map // map[string]*LinkManager
+	ManagedNodes    sync.Map
+	AuthorizedUsers sync.Map // accounting identity -> current MemoryAccount object
+	ohm             outbound.Manager
+	router          routing.Router
+	policy          policy.Manager
+	stats           stats.Manager
+	fdns            dns.FakeDNSEngine
+	Counter         sync.Map
+	LinkManagers    sync.Map // map[string]*LinkManager
+}
+
+func (d *DefaultDispatcher) authorized(tag string, user *protocol.MemoryUser) bool {
+	if _, managed := d.ManagedNodes.Load(tag); !managed {
+		return true
+	}
+	if user == nil {
+		return false
+	}
+	current, exists := d.AuthorizedUsers.Load(user.Email)
+	return exists && current == user.Account
 }
 
 func init() {
@@ -165,7 +191,14 @@ func (d *DefaultDispatcher) getLink(ctx context.Context, network net.Network) (*
 	sessionInbound := session.InboundFromContext(ctx)
 	var user *protocol.MemoryUser
 	if sessionInbound != nil {
-		user = sessionInbound.User
+		user = accountingUser(sessionInbound)
+	}
+	if sessionInbound != nil && !d.authorized(sessionInbound.Tag, user) {
+		common.Close(outboundLink.Writer)
+		common.Close(inboundLink.Writer)
+		common.Interrupt(outboundLink.Reader)
+		common.Interrupt(inboundLink.Reader)
+		return nil, nil, nil, errors.New("user authorization has been revoked")
 	}
 
 	var limit *limiter.Limiter
@@ -208,15 +241,20 @@ func (d *DefaultDispatcher) getLink(ctx context.Context, network net.Network) (*
 		}
 		lm.AddLink(managedWriter, outboundLink.Reader)
 		inboundLink.Writer = managedWriter
-		if w != nil {
+		if limit.DynamicEnabled() {
+			sessionInbound.CanSpliceCopy = 3
+			current := func() (*ratelimit.Bucket, bool) { return limit.CurrentBucket(user.Email) }
+			inboundLink.Writer = rate.NewDynamicRateLimitWriter(inboundLink.Writer, current)
+			outboundLink.Writer = rate.NewDynamicRateLimitWriter(outboundLink.Writer, current)
+		} else if w != nil {
 			sessionInbound.CanSpliceCopy = 3
 			inboundLink.Writer = rate.NewRateLimitWriter(inboundLink.Writer, w)
 			outboundLink.Writer = rate.NewRateLimitWriter(outboundLink.Writer, w)
 		}
 		var t *counter.TrafficCounter
 		if c, ok := d.Counter.Load(sessionInbound.Tag); !ok {
-			t = counter.NewTrafficCounter()
-			d.Counter.Store(sessionInbound.Tag, t)
+			actual, _ := d.Counter.LoadOrStore(sessionInbound.Tag, counter.NewTrafficCounter())
+			t = actual.(*counter.TrafficCounter)
 		} else {
 			t = c.(*counter.TrafficCounter)
 		}
@@ -349,7 +387,12 @@ func (d *DefaultDispatcher) DispatchLink(ctx context.Context, destination net.De
 	sessionInbound := session.InboundFromContext(ctx)
 	var user *protocol.MemoryUser
 	if sessionInbound != nil {
-		user = sessionInbound.User
+		user = accountingUser(sessionInbound)
+	}
+	if sessionInbound != nil && !d.authorized(sessionInbound.Tag, user) {
+		common.Close(outbound.Writer)
+		common.Interrupt(outbound.Reader)
+		return errors.New("user authorization has been revoked")
 	}
 
 	var limit *limiter.Limiter
@@ -387,14 +430,17 @@ func (d *DefaultDispatcher) DispatchLink(ctx context.Context, destination net.De
 			manager: lm,
 		}
 		outbound.Writer = managedWriter
-		if w != nil {
+		if limit.DynamicEnabled() {
+			sessionInbound.CanSpliceCopy = 3
+			outbound.Writer = rate.NewDynamicRateLimitWriter(outbound.Writer, func() (*ratelimit.Bucket, bool) { return limit.CurrentBucket(user.Email) })
+		} else if w != nil {
 			sessionInbound.CanSpliceCopy = 3
 			outbound.Writer = rate.NewRateLimitWriter(outbound.Writer, w)
 		}
 		var t *counter.TrafficCounter
 		if c, ok := d.Counter.Load(sessionInbound.Tag); !ok {
-			t = counter.NewTrafficCounter()
-			d.Counter.Store(sessionInbound.Tag, t)
+			actual, _ := d.Counter.LoadOrStore(sessionInbound.Tag, counter.NewTrafficCounter())
+			t = actual.(*counter.TrafficCounter)
 		} else {
 			t = c.(*counter.TrafficCounter)
 		}

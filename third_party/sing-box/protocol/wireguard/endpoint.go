@@ -40,6 +40,7 @@ func RegisterEndpoint(registry *endpoint.Registry) {
 }
 
 type Endpoint struct {
+	disableFlow bool
 	endpoint.Adapter
 	ctx            context.Context
 	router         adapter.Router
@@ -54,6 +55,7 @@ type Endpoint struct {
 
 func NewEndpoint(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.WireGuardEndpointOptions) (adapter.Endpoint, error) {
 	ep := &Endpoint{
+		disableFlow:    options.DisableFlow,
 		Adapter:        endpoint.NewAdapterWithDialerOptions(C.TypeWireGuard, tag, []string{N.NetworkTCP, N.NetworkUDP, N.NetworkICMP}, options.DialerOptions),
 		ctx:            ctx,
 		router:         router,
@@ -220,6 +222,9 @@ func (w *Endpoint) DetachReturn(returnPath tun.Return) error {
 }
 
 func (w *Endpoint) JudgeFlow(network uint8, source netip.AddrPort, destination netip.AddrPort, firstPacket []byte) tun.FlowVerdict {
+	if w.disableFlow {
+		return tun.FlowVerdict{Action: tun.ActionAccept}
+	}
 	for _, localPrefix := range w.localAddresses {
 		if localPrefix.Contains(destination.Addr()) {
 			return tun.FlowVerdict{Action: tun.ActionAccept}

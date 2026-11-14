@@ -38,15 +38,31 @@ type NodeInfo struct {
 	AnyTls      *AnyTlsNode
 	Hysteria    *HysteriaNode
 	Hysteria2   *Hysteria2Node
+	HTTP        *HTTPNode
+	Masque      *MasqueNode
 	Common      *CommonNode
 }
 
 type CommonNode struct {
-	Host       string      `json:"host"`
-	ServerPort int         `json:"server_port"`
-	ServerName string      `json:"server_name"`
-	Routes     []Route     `json:"routes"`
-	BaseConfig *BaseConfig `json:"base_config"`
+	TrafficBatch bool        `json:"traffic_batch"`
+	Host         string      `json:"host"`
+	ServerPort   int         `json:"server_port"`
+	ServerName   string      `json:"server_name"`
+	Routes       []Route     `json:"routes"`
+	BaseConfig   *BaseConfig `json:"base_config"`
+}
+
+type HTTPNode struct {
+	CommonNode
+	Tls int `json:"tls"`
+}
+
+type MasqueNode struct {
+	CommonNode
+	Address []string `json:"address"`
+	MTU     uint32   `json:"mtu"`
+	Path    string   `json:"path"`
+	Host    string   `json:"masque_host"`
 }
 
 type Route struct {
@@ -79,13 +95,15 @@ type VAllssNode struct {
 }
 
 type TlsSettings struct {
-	ServerName  string `json:"server_name"`
-	Dest        string `json:"dest"`
-	ServerPort  string `json:"server_port"`
-	ShortId     string `json:"short_id"`
-	PrivateKey  string `json:"private_key"`
-	Mldsa65Seed string `json:"mldsa65Seed"`
-	Xver        uint64 `json:"xver,string"`
+	ServerName  string   `json:"server_name"`
+	ServerNames []string `json:"server_names,omitempty"`
+	Dest        string   `json:"dest"`
+	ServerPort  string   `json:"server_port"`
+	ShortId     string   `json:"short_id"`
+	ShortIds    []string `json:"short_ids,omitempty"`
+	PrivateKey  string   `json:"private_key"`
+	Mldsa65Seed string   `json:"mldsa65Seed"`
+	Xver        uint64   `json:"xver,string"`
 }
 
 type EncSettings struct {
@@ -201,6 +219,18 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 	// parse protocol params
 	var cm *CommonNode
 	switch c.NodeType {
+	case "http", "mixed":
+		rsp := &HTTPNode{}
+		if err = json.Unmarshal(r.Body(), rsp); err != nil {
+			return nil, fmt.Errorf("decode HTTP parameters: %w", err)
+		}
+		node.HTTP, cm, node.Security = rsp, &rsp.CommonNode, rsp.Tls
+	case "masque":
+		rsp := &MasqueNode{}
+		if err = json.Unmarshal(r.Body(), rsp); err != nil {
+			return nil, fmt.Errorf("decode MASQUE parameters: %w", err)
+		}
+		node.Masque, cm, node.Security = rsp, &rsp.CommonNode, Tls
 	case "vmess", "vless":
 		rsp := &VAllssNode{}
 		err = json.Unmarshal(r.Body(), rsp)

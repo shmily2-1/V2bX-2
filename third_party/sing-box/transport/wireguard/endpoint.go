@@ -257,7 +257,7 @@ func (e *Endpoint) Start(postStart bool) error {
 	err = wgDevice.IpcSet(ipcConf.String())
 	if err != nil {
 		wgDevice.Close()
-		return E.Cause(err, "setup wireguard: \n", ipcConf.String())
+		return E.Cause(err, "setup wireguard")
 	}
 	wgPeers := make([]*device.Peer, 0, len(e.peers))
 	for _, peer := range e.peers {

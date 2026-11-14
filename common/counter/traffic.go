@@ -14,6 +14,14 @@ type TrafficStorage struct {
 	DownCounter atomic.Int64
 }
 
+// Snapshot atomically drains each direction without dropping concurrent adds.
+func (s *TrafficStorage) Snapshot(reset bool) (up, down int64) {
+	if reset {
+		return s.UpCounter.Swap(0), s.DownCounter.Swap(0)
+	}
+	return s.UpCounter.Load(), s.DownCounter.Load()
+}
+
 func NewTrafficCounter() *TrafficCounter {
 	return &TrafficCounter{}
 }

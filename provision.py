@@ -30,7 +30,7 @@ import configure as cfg
 
 SERVICE = 'V2bX.service'
 DROPIN = Path('/run/systemd/system/V2bX.service.d/90-v2bx-provision.conf')
-TYPES = ('hysteria', 'vless', 'vmess', 'trojan', 'shadowsocks', 'tuic', 'anytls', 'hysteria2')
+TYPES = ('hysteria', 'vless', 'vmess', 'trojan', 'shadowsocks', 'tuic', 'anytls', 'hysteria2', 'http', 'mixed', 'masque')
 
 
 class ProvisionError(ValueError):
@@ -127,7 +127,7 @@ class HTTPPortLease:
             print('  PID=%d  程序=%s  服务=%s' % (owner['pid'], owner['name'], owner['unit'] or '无systemd托管'))
         services = {o['unit']: http_service_info(o['unit']) for o in owners if o['unit'] and o['unit'] != 'V2bX.service'}
         raw = [o for o in owners if not o['unit']]
-        if services and any(c.get('transport') == 'tcp' and c.get('port') == 80 for c in checks):
+        if services and any('tcp' in c.get('transports', [c.get('transport')]) and c.get('port') == 80 for c in checks):
             raise PortError('新节点也需要TCP80，无法与待恢复服务共用；请改节点端口或人工迁移服务')
         if check_only:
             raise PortError('TCP80仍被占用；--check-only绝不停止/终止进程。部署时可明确选择临时释放')
@@ -247,7 +247,7 @@ def api_get(node, endpoint, node_type=None):
 
 
 def needs_tls(info, protocol):
-    return protocol in ('hysteria', 'hysteria2', 'trojan', 'tuic', 'anytls') or str(info.get('tls', 0)) == '1'
+    return protocol in ('hysteria', 'hysteria2', 'trojan', 'tuic', 'anytls', 'masque') or str(info.get('tls', 0)) == '1'
 
 
 def effective_protocol(info, fallback):
@@ -271,8 +271,16 @@ def inspect_node(node):
     users = api_get(node, 'user').get('users')
     if not isinstance(users, list):
         raise ProvisionError('面板没有返回合法 users 数组')
+    if protocol in ('http', 'mixed', 'masque') and any(not u.get('uuid') or not u.get('password') for u in users):
+        raise ProvisionError('HTTP/Mixed/MASQUE 用户必须包含 uuid 用户名和显式 password')
+    if info.get('network') == 'xdrive':
+        raise ProvisionError('XDRIVE 不监听 TCP 端口，请使用手工配置和 export-node 验证实际存储会话；在线部署尚不支持这种健康检查')
+    transports = ['udp' if protocol in ('hysteria', 'hysteria2', 'tuic') else 'tcp']
+    if protocol == 'masque':
+        alpn = node.get('CertConfig', {}).get('ALPN', [])
+        transports = (['tcp'] if 'h2' in alpn else []) + (['udp'] if 'h3' in alpn or 'h2' not in alpn else [])
     return {'info': info, 'protocol': protocol, 'port': int(port), 'users': len(users),
-            'transport': 'udp' if protocol in ('hysteria', 'hysteria2', 'tuic') else 'tcp'}
+            'transport': '+'.join(transports), 'transports': transports}
 
 
 def certificate_valid(cert):
@@ -302,8 +310,8 @@ def preflight(document, public_ip=None, allow_empty=False, allow_insecure_panel=
             node['NodeID'], check['protocol'], check['transport'].upper(), check['port'], check['users'],
             check['info'].get('ports') or '无'))
         if not check['users']:
-            if not allow_empty or check['protocol'] != 'hysteria2':
-                raise ProvisionError('该节点没有授权用户；仅Hysteria2可显式 --allow-empty 等待授权')
+            if not allow_empty or check['protocol'] not in ('hysteria2', 'http', 'mixed', 'masque'):
+                raise ProvisionError('该节点没有授权用户；该协议未验证空授权等待模式')
         cert = node.get('CertConfig', {})
         mode = cert.get('CertMode', 'none')
         if needs_tls(check['info'], check['protocol']):
@@ -373,8 +381,9 @@ def wait_healthy(document, checks, timeout):
             time.sleep(1)
             continue
         listeners = run('ss', '-H', '-lntup').stdout.splitlines()
-        listening = all(any(line.startswith(c['transport']) and re.search(r':' + str(c['port']) + r'\s', line)
-                            and 'pid=' + pid + ',' in line for line in listeners) for c in checks)
+        listening = all(any(line.startswith(network) and re.search(r':' + str(c['port']) + r'\s', line)
+                            and 'pid=' + pid + ',' in line for line in listeners)
+                        for c in checks for network in c.get('transports', [c['transport']]))
         ready = listening and pid != '0' and state.get('ActiveState') == 'active'
         if ready:
             if previous != pid:

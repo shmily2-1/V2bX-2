@@ -112,6 +112,7 @@ type Options struct {
 	SendIP                 string          `json:"SendIP"`
 	DeviceOnlineMinTraffic int64           `json:"DeviceOnlineMinTraffic"`
 	ReportMinTraffic       int64           `json:"ReportMinTraffic"`
+	TrafficStateDir        string          `json:"TrafficStateDir,omitempty"`
 	LimitConfig            LimitConfig     `json:"LimitConfig"`
 	RawOptions             json.RawMessage `json:"RawOptions"`
 	XrayOptions            *XrayOptions    `json:"XrayOptions"`
@@ -137,7 +138,9 @@ func (o *Options) UnmarshalJSON(data []byte) error {
 		o.RawOptions = data
 		return nil
 	default:
-		o.Core = ""
+		if o.Core != "" {
+			return fmt.Errorf("unsupported core %q", o.Core)
+		}
 		o.RawOptions = data
 	}
 	return nil

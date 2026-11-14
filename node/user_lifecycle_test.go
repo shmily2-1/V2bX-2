@@ -16,6 +16,10 @@ type recordingCore struct {
 	nodes, adds, deletes int
 }
 
+func (c *recordingCore) GetUserTrafficSlice(string, bool) ([]panel.UserTraffic, error) {
+	return nil, nil
+}
+
 func (c *recordingCore) AddNode(string, *panel.NodeInfo, *conf.Options) error { c.nodes++; return nil }
 func (c *recordingCore) DelNode(string) error                                 { c.nodes--; return nil }
 func (c *recordingCore) AddUsers(p *core.AddUsersParams) (int, error) {

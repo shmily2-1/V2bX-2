@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"slices"
+	"sync/atomic"
 	"time"
 
 	"github.com/sagernet/sing-box/common/listener"
@@ -32,6 +33,16 @@ const (
 
 var ConfigureHTTP3ListenerFunc func(ctx context.Context, logger logger.Logger, listener *listener.Listener, handler http.Handler, tlsConfig tls.ServerConfig, options option.QUICOptions) (io.Closer, error)
 
+type authenticatorContextKey struct{}
+
+func ContextWithAuthenticator(ctx context.Context, value *auth.Authenticator) context.Context {
+	return context.WithValue(ctx, authenticatorContextKey{}, value)
+}
+func AuthenticatorFromContext(ctx context.Context) *auth.Authenticator {
+	value, _ := ctx.Value(authenticatorContextKey{}).(*auth.Authenticator)
+	return value
+}
+
 type Handler interface {
 	N.TCPConnectionHandlerEx
 	N.UDPConnectionHandlerEx
@@ -48,7 +59,7 @@ type ServerOptions struct {
 }
 
 type Server struct {
-	authenticator *auth.Authenticator
+	authenticator atomic.Pointer[auth.Authenticator]
 	logger        logger.ContextLogger
 	http1         bool
 	http2Server   *http2.Server
@@ -58,12 +69,12 @@ type Server struct {
 
 func NewServer(options ServerOptions) *Server {
 	server := &Server{
-		authenticator: options.Authenticator,
-		logger:        options.Logger,
-		http1:         options.HTTP1,
-		udp:           options.UDP,
-		tunnels:       options.Tunnels,
+		logger:  options.Logger,
+		http1:   options.HTTP1,
+		udp:     options.UDP,
+		tunnels: options.Tunnels,
 	}
+	server.authenticator.Store(options.Authenticator)
 	if options.HTTP2 {
 		server.http2Server = &http2.Server{
 			IdleTimeout:                  idleTimeout,
@@ -78,6 +89,12 @@ func NewServer(options ServerOptions) *Server {
 		}
 	}
 	return server
+}
+
+// SetAuthenticator replaces an immutable authentication snapshot.
+// A non-nil empty authenticator denies all users; nil allows anonymous use.
+func (s *Server) SetAuthenticator(authenticator *auth.Authenticator) {
+	s.authenticator.Store(authenticator)
 }
 
 func (s *Server) ServeConnection(ctx context.Context, conn net.Conn, reader *Reader, handler Handler, source M.Socksaddr, onClose N.CloseHandlerFunc) {

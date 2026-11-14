@@ -57,6 +57,10 @@
       "upstream_sha256": null,
       "patched_sha256": "370410728204e3aa2a3b8fca34ef80b0b14aaab6936eac984df44c6c99cf7ec5"
     },
+    "option/wireguard.go": {
+      "upstream_sha256": "88a4abd2a59044ef539c9c86d4b5f772174fadcce268930da1e7bd7198d39545",
+      "patched_sha256": "97dc15ed5c12e26996dbda27e0d93627fde2be5b13f351ed59da569f4bbc33b2"
+    },
     "protocol/anytls/anytls_user.go": {
       "upstream_sha256": null,
       "patched_sha256": "dbd9fb79b7b71d5dbb8b26e10dbe0ea2bc3dec073d60919735a62f67fbd0a940"
@@ -77,6 +81,10 @@
       "upstream_sha256": null,
       "patched_sha256": "58f42bce517e6576ad4bf3d220189e99bb04c0a8bfc51793bf989f9da14ab7d5"
     },
+    "protocol/http/inbound.go": {
+      "upstream_sha256": "f8dc832e73d8f22a48310a63ef83be470100775e03af2e3c51a32c4afe5ac6b1",
+      "patched_sha256": "4a998bc0861d95e0c4eb28e5aa453cb2b75c4015398b0a3fe4fe81691111e81f"
+    },
     "protocol/hysteria/hysteria_user.go": {
       "upstream_sha256": null,
       "patched_sha256": "f7926399dbe47f2664217cdbac3cde68ef9415c7695a0ce5d97b3502fb80629f"
@@ -88,6 +96,10 @@
     "protocol/hysteria2/inbound.go": {
       "upstream_sha256": "a5a4837e06c26ec37675d63ec6ef9d1515388e176cb87fee5eecf23e0a0f4bf0",
       "patched_sha256": "3c3f0af4bde78a3bb41d06e88c8b7b2fb54c60d5e8bf97eb5e529e22d12b4edb"
+    },
+    "protocol/mixed/inbound.go": {
+      "upstream_sha256": "255a85f3b089dd6c6a7c00f70f0aeee2b97087c566ffb766b4824a81c378f457",
+      "patched_sha256": "cd1930b6b3f07223957d243b88bd70280dba715a959d14b348d98655f6c06298"
     },
     "protocol/shadowsocks/shadowsocks_user.go": {
       "upstream_sha256": null,
@@ -120,6 +132,22 @@
     "protocol/vmess/vmess_user.go": {
       "upstream_sha256": null,
       "patched_sha256": "e0bec8728114dc693ca7f962bb574ec1c91d74c1f526b7ee547dbbc5def699be"
+    },
+    "protocol/wireguard/endpoint.go": {
+      "upstream_sha256": "649a2e1d8d06ce7e0e49ea17a63f3a35e656dd3ed68c809c322fac37eaf2cc9f",
+      "patched_sha256": "895a9ae651a2976b04cb8009b274e4cbee3bd93a50127e2eb9d470905c0f8075"
+    },
+    "protocol/wireguard/managed.go": {
+      "upstream_sha256": null,
+      "patched_sha256": "3d3194c8642628bf5ddc8dcecf5cb82a26aeeafe924c03a6bee957cd543d13f1"
+    },
+    "transport/http/server.go": {
+      "upstream_sha256": "18fbb72267ac6f71f08cfe6af7a2a41b860fbf9401bca60264ed9846b43c2981",
+      "patched_sha256": "58e58f0c949d8c3d42b60f31defad6c4a6b32792fdef5a2d6889f86d2b9ebcc6"
+    },
+    "transport/http/tunnel_server.go": {
+      "upstream_sha256": "3911ecc9fedfbb9f5bf0a17871f42f81959bfb7bc44cc70b78167703366c3046",
+      "patched_sha256": "1a148527223c245baf955ce96e9eb3f9d72acb6585c426d3f4d6b1e4953bdc6b"
     },
     "transport/openconnect/device.go": {
       "upstream_sha256": null,
@@ -168,6 +196,14 @@
     "transport/wireguard/device_stack_stub.go": {
       "upstream_sha256": null,
       "patched_sha256": "2f2f9b6264ffadbf48ca71e03805a1c34c667869e3f52240dc085b2931f68d78"
+    },
+    "transport/wireguard/endpoint.go": {
+      "upstream_sha256": "1c3b81621659d0b3172d4351a09b7f05fe877eb82ae810da676eb4d1e2e7dfd4",
+      "patched_sha256": "e785893d93875716d7964db3023ee09777b764d98c9d0f704808b9ae5e3cb434"
+    },
+    "transport/wireguard/managed.go": {
+      "upstream_sha256": null,
+      "patched_sha256": "218f166353516f7e489485feaf1c7599681211ad5e9fe23f7ada4482059980cb"
     }
   }
 }

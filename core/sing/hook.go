@@ -3,6 +3,7 @@ package sing
 import (
 	"context"
 	"fmt"
+	"github.com/juju/ratelimit"
 	"net"
 	"sync"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/log"
 	tun "github.com/sagernet/sing-tun"
+	"github.com/sagernet/sing/common/auth"
 	N "github.com/sagernet/sing/common/network"
 	"github.com/shmily2-1/V2bX-2/common/counter"
 )
@@ -21,7 +23,10 @@ import (
 var _ adapter.ConnectionTracker = (*HookServer)(nil)
 
 type HookServer struct {
-	counter sync.Map //map[string]*counter.TrafficCounter
+	managedMu   sync.Mutex
+	managed     map[string]map[string]*managedUser
+	managedAuth map[string]*auth.Authenticator
+	counter     sync.Map //map[string]*counter.TrafficCounter
 }
 
 // V2bX creates proxy inbounds, not TUN inbounds. TUN fast-path flows have
@@ -34,7 +39,14 @@ func (h *HookServer) ModeList() []string {
 	return nil
 }
 
-func (h *HookServer) RoutedConnection(_ context.Context, conn net.Conn, m adapter.InboundContext, _ adapter.Rule, _ adapter.Outbound) net.Conn {
+func (h *HookServer) RoutedConnection(ctx context.Context, conn net.Conn, m adapter.InboundContext, _ adapter.Rule, _ adapter.Outbound) net.Conn {
+	lease, allowed := h.lease(ctx, m.Inbound, m.User, conn)
+	if !allowed {
+		return conn
+	}
+	if lease != nil {
+		conn = &managedConn{Conn: conn, lease: lease}
+	}
 	l, err := limiter.GetLimiter(m.Inbound)
 	if err != nil {
 		log.Warn("get limiter for ", m.Inbound, " error: ", err)
@@ -46,8 +58,11 @@ func (h *HookServer) RoutedConnection(_ context.Context, conn net.Conn, m adapte
 		conn.Close()
 		log.Error("[", m.Inbound, "] ", "Limited ", m.User, " by ip or conn")
 		return conn
-	} else if b != nil {
+	} else if b != nil && !l.DynamicEnabled() {
 		conn = rate.NewConnRateLimiter(conn, b)
+	}
+	if l.DynamicEnabled() {
+		conn = rate.NewDynamicConnRateLimiter(conn, func() (*ratelimit.Bucket, bool) { return l.CurrentBucket(taguuid) })
 	}
 	if l != nil {
 		destStr := m.Destination.AddrString()
@@ -73,8 +88,8 @@ func (h *HookServer) RoutedConnection(_ context.Context, conn net.Conn, m adapte
 	}
 	var t *counter.TrafficCounter
 	if c, ok := h.counter.Load(m.Inbound); !ok {
-		t = counter.NewTrafficCounter()
-		h.counter.Store(m.Inbound, t)
+		actual, _ := h.counter.LoadOrStore(m.Inbound, counter.NewTrafficCounter())
+		t = actual.(*counter.TrafficCounter)
 	} else {
 		t = c.(*counter.TrafficCounter)
 	}
@@ -82,7 +97,14 @@ func (h *HookServer) RoutedConnection(_ context.Context, conn net.Conn, m adapte
 	return conn
 }
 
-func (h *HookServer) RoutedPacketConnection(_ context.Context, conn N.PacketConn, m adapter.InboundContext, _ adapter.Rule, _ adapter.Outbound) N.PacketConn {
+func (h *HookServer) RoutedPacketConnection(ctx context.Context, conn N.PacketConn, m adapter.InboundContext, _ adapter.Rule, _ adapter.Outbound) N.PacketConn {
+	lease, allowed := h.lease(ctx, m.Inbound, m.User, conn)
+	if !allowed {
+		return conn
+	}
+	if lease != nil {
+		conn = &managedPacket{PacketConn: conn, lease: lease}
+	}
 	l, err := limiter.GetLimiter(m.Inbound)
 	if err != nil {
 		log.Warn("get limiter for ", m.Inbound, " error: ", err)
@@ -94,8 +116,11 @@ func (h *HookServer) RoutedPacketConnection(_ context.Context, conn N.PacketConn
 		conn.Close()
 		log.Error("[", m.Inbound, "] ", "Limited ", m.User, " by ip or conn")
 		return conn
-	} else if b != nil {
-		//conn = rate.NewPacketConnCounter(conn, b)
+	} else if b != nil && !l.DynamicEnabled() {
+		conn = rate.NewPacketRateLimiter(conn, func() (*ratelimit.Bucket, bool) { return b, false })
+	}
+	if l.DynamicEnabled() {
+		conn = rate.NewPacketRateLimiter(conn, func() (*ratelimit.Bucket, bool) { return l.CurrentBucket(taguuid) })
 	}
 	if l != nil {
 		destStr := m.Destination.AddrString()
@@ -121,8 +146,8 @@ func (h *HookServer) RoutedPacketConnection(_ context.Context, conn N.PacketConn
 	}
 	var t *counter.TrafficCounter
 	if c, ok := h.counter.Load(m.Inbound); !ok {
-		t = counter.NewTrafficCounter()
-		h.counter.Store(m.Inbound, t)
+		actual, _ := h.counter.LoadOrStore(m.Inbound, counter.NewTrafficCounter())
+		t = actual.(*counter.TrafficCounter)
 	} else {
 		t = c.(*counter.TrafficCounter)
 	}

@@ -6,26 +6,28 @@
 
 > 当前为升级验收版，不代表所有生产配置均已验证。先在测试节点验证客户端、流量上报、限速、证书和断线行为，再切换生产节点。不要使用旧仓库的一键脚本更新本项目，否则可能覆盖回上游版本。
 
-## 内核版本（2026-09-19 核实）
+## 锁定内核版本（2026-11-15）
 
 | 内核 | 上游项目原版本 | 本仓库版本 | 维护方式 |
 |---|---|---|---|
 | Xray | 25.12.2 + 作者 fork | **26.11.9** / Go module `v1.260327.1-0.20261109052709-676eaf66f8f0` | 官方预发布版本，移除旧 fork |
 | sing-box | 1.13.0-alpha.5 定制快照 | **1.15.0-alpha.13 + 兼容补丁** | 官方预发布源码内嵌，保留动态用户管理 |
 | Hysteria 2 core/extras | 2.6.4 | **2.13.0** | 官方模块 |
-| Go | 1.25.0 | **1.27.1** | 本地与 CI 统一 |
+| Go | 1.25.0 | **最低 1.27.1** | 本地使用 1.27.4，CI 按 go.mod 选择 |
 
-Xray `26.9.9` 等更新条目在核实时被官方标记为 prerelease，本分支不会静默切换到预发布内核。内核版本以 `V2bX version` 实际输出为准。
+依赖版本以 `go.mod` / `go.sum` 和内嵌源码为准，本次协议适配不升级锁定依赖。内核版本以 `V2bX version` 实际输出为准。
 
 ## 协议与核心选择
 
 | 核心 Type | 协议 |
 |---|---|
-| `xray` | VMess、VLESS、Trojan、Shadowsocks |
-| `sing` | VMess、VLESS、Trojan、Shadowsocks、TUIC、AnyTLS、Hysteria 1、Hysteria 2 |
+| `xray` | VMess、VLESS（含 XDRIVE 传输）、Trojan、Shadowsocks |
+| `sing` | VMess、VLESS、Trojan、Shadowsocks、TUIC、AnyTLS、Hysteria 1、Hysteria 2、HTTP、Mixed、MASQUE |
 | `hysteria2` | 独立官方 Hysteria 2 |
 
 Hysteria 1、TUIC、AnyTLS、VMess/VLESS、Shadowsocks 不全是独立可执行“内核”，它们随所选主内核及协议库更新。面板仍使用上游 V2board/Xboard 兼容 API；本次没有修改线上面板或替任何节点生成用户。
+
+本地服务还支持 Tunnel、TUN、WireGuard，以及独立 AmneziaWG / MTProto 后端。后两者需要另外准备固定版本的后端程序；一键安装器不下载这些程序，也不自动配置宿主 NAT。HTTP/Mixed 的独立凭据及扩展服务面板管理需要配套修改后的 Xboard，详情见 [P2–P5 说明](docs/PROTOCOL-ADAPTATION-P2-P5.md)。
 
 ## 构建
 
@@ -53,7 +55,7 @@ go build -trimpath -tags "$TAGS" -ldflags '-s -w' -o V2bX .
 
 ### Linux 一键安装（兼容原 V2bX 命令）
 
-支持 **amd64 / arm64**，目标是常见 Debian / Ubuntu / RHEL 系 **systemd** 服务器；一键入口不会在 OpenRC、SysVinit、runit 或未运行 systemd 的容器中继续安装。先备份现有配置并阅读 [升级说明](docs/UPGRADE.md)。当前固定安装 `v0.1.0-core-upgrade.15` **验收版 / prerelease**，内核按官方预发布版本更新。内嵌 sing-box 的 REALITY 出站兼容修复及外部客户端限制见 [握手排查说明](docs/REALITY-HANDSHAKE.md)。
+支持 **amd64 / arm64**，目标是常见 Debian / Ubuntu / RHEL 系 **systemd** 服务器；一键入口不会在 OpenRC、SysVinit、runit 或未运行 systemd 的容器中继续安装。先备份现有配置并阅读 [升级说明](docs/UPGRADE.md)。当前固定安装 `v0.1.0-core-upgrade.16` **验收版 / prerelease**，内核按锁定版本构建。内嵌 sing-box 的 REALITY 出站兼容修复及外部客户端限制见 [握手排查说明](docs/REALITY-HANDSHAKE.md)。
 
 与原项目命令格式一致：
 
@@ -66,7 +68,7 @@ wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/main/install.sh && ba
 生产环境建议固定已验收标签，避免 `main` 变化：
 
 ```bash
-wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/v0.1.0-core-upgrade.15/install.sh && bash install.sh
+wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/v0.1.0-core-upgrade.16/install.sh && bash install.sh
 ```
 
 - 从本仓库 Release 下载对应架构，校验 SHA256，原子替换程序并备份旧文件。下载/校验失败不会安装。
@@ -86,6 +88,10 @@ OpenRC、SysVinit、runit 或未运行 systemd 的容器不在一键入口支持
 
 ## 验证与维护
 
+P0/P1 的基础修复、TLS/ECH、REALITY 与传输配置补全，以及实际兼容性限制见 [适配说明](docs/PROTOCOL-ADAPTATION-P0-P1.md)。
+
+HTTP/Mixed、Tunnel/TUN、XDRIVE、MASQUE、WireGuard Peer 和独立 AmneziaWG/MTProto 后端的配置、管理命令与验证边界见 [P2–P5 说明](docs/PROTOCOL-ADAPTATION-P2-P5.md)。
+
 下面的命令针对源码仓库 checkout；Release ZIP 只包含运行所需的资料和管理 bundle，不保证包含完整测试脚本目录。
 
 ```bash
@@ -93,7 +99,7 @@ GOEXPERIMENT=jsonv2 go test -tags "$TAGS" -count=1 -timeout 180s ./...
 python3 scripts/check-sing-patches.py
 ```
 
-- 本地回环生命周期覆盖三套内核、13 个核心/协议组合。
+- 本地回环生命周期覆盖三套内核、16 个核心/协议组合。
 - 真实回环数据面覆盖 Xray/VLESS、sing/VLESS、sing/Hysteria2、独立 Hysteria2：认证、TCP echo、双向流量计数、删除用户后的新连接拒绝。
 - 这些不等同于生产面板接入、所有协议/客户端互通、REALITY、UDP 转发、限速精度及长时间并发压测。
 - 上游需要真实面板或 ACME/DNS 的旧测试已隔离在 `integration` 标签，普通测试不联系生产服务。

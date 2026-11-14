@@ -1,24 +1,56 @@
 package node
 
 import (
-	"strconv"
-
 	"github.com/shmily2-1/V2bX-2/api/panel"
 	log "github.com/sirupsen/logrus"
 )
 
 func (c *Controller) reportUserTrafficTask() (err error) {
-	userTraffic, _ := c.server.GetUserTrafficSlice(c.tag, true)
-	if len(userTraffic) > 0 {
-		err = c.apiClient.ReportUserTraffic(userTraffic)
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+	if c.closed {
+		return nil
+	}
+	userTraffic, collectErr := c.collectTraffic()
+	if collectErr != nil {
+		log.WithError(collectErr).Error("Collect/persist traffic failed; retained pending counts")
+		return nil
+	}
+	batch := c.trafficBatch()
+	toReport := batch[:0]
+	for _, item := range batch {
+		if item.Upload+item.Download > c.ReportMinTraffic*1024 {
+			toReport = append(toReport, item)
+		}
+	}
+	batch = toReport
+	batch, err = c.prepareTrafficBatch(batch)
+	if err != nil {
+		return err
+	}
+	if len(batch) > 0 {
+		err = c.apiClient.ReportTrafficBatch(batch, c.inflightID)
 		if err != nil {
 			log.WithFields(log.Fields{
 				"tag": c.tag,
 				"err": err,
 			}).Info("Report user traffic failed")
 		} else {
-			log.WithField("tag", c.tag).Infof("Report %d users traffic", len(userTraffic))
-			log.WithField("tag", c.tag).Debugf("User traffic: %+v", userTraffic)
+			for _, item := range batch {
+				remaining := c.pendingTraffic[item.UID]
+				remaining.Upload -= item.Upload
+				remaining.Download -= item.Download
+				if remaining.Upload == 0 && remaining.Download == 0 {
+					delete(c.pendingTraffic, item.UID)
+				} else {
+					c.pendingTraffic[item.UID] = remaining
+				}
+			}
+			c.inflightID, c.inflightTraffic = "", nil
+			if err := c.saveTrafficState(); err != nil {
+				log.WithError(err).Error("Persist traffic acknowledgement failed; disk state may be retried after restart")
+			}
+			log.WithField("tag", c.tag).Infof("Report %d users traffic", len(batch))
 		}
 	}
 
@@ -60,23 +92,26 @@ func (c *Controller) reportUserTrafficTask() (err error) {
 }
 
 func compareUserList(old, new []panel.UserInfo) (deleted, added []panel.UserInfo) {
-	oldMap := make(map[string]int)
-	for i, user := range old {
-		key := user.Uuid + strconv.Itoa(user.SpeedLimit)
-		oldMap[key] = i
+	oldMap := make(map[string]panel.UserInfo)
+	for _, user := range old {
+		oldMap[user.Uuid] = user
 	}
 
 	for _, user := range new {
-		key := user.Uuid + strconv.Itoa(user.SpeedLimit)
-		if _, exists := oldMap[key]; !exists {
+		previous, exists := oldMap[user.Uuid]
+		if !exists {
 			added = append(added, user)
 		} else {
-			delete(oldMap, key)
+			if previous != user {
+				deleted = append(deleted, previous)
+				added = append(added, user)
+			}
+			delete(oldMap, user.Uuid)
 		}
 	}
 
-	for _, index := range oldMap {
-		deleted = append(deleted, old[index])
+	for _, user := range oldMap {
+		deleted = append(deleted, user)
 	}
 
 	return deleted, added

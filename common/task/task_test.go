@@ -12,4 +12,5 @@ func TestTask(t *testing.T) {
 		return nil
 	}, Interval: time.Second}
 	ts.Start(false)
+	defer ts.CloseAndWait()
 }

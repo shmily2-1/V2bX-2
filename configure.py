@@ -18,8 +18,8 @@ import tempfile
 from urllib.parse import urlsplit
 
 PROTOCOLS = {
-    'xray': ('vmess', 'vless', 'trojan', 'shadowsocks'),
-    'sing': ('vmess', 'vless', 'trojan', 'shadowsocks', 'hysteria', 'hysteria2', 'tuic', 'anytls'),
+    'xray': ('vmess', 'vless', 'trojan', 'shadowsocks', 'masque'),
+    'sing': ('vmess', 'vless', 'trojan', 'shadowsocks', 'hysteria', 'hysteria2', 'tuic', 'anytls', 'http', 'mixed'),
     'hysteria2': ('hysteria2',),
 }
 
@@ -112,7 +112,7 @@ def validate(document):
         key = api.get('ApiKey')
         if not isinstance(key, str) or key in ('', 'test', 'REPLACE_WITH_YOUR_PANEL_KEY'):
             raise ValueError('ApiKey 为空或仍是示例占位值')
-        if api.get('NodeType') not in ('vmess', 'vless', 'trojan', 'shadowsocks', 'hysteria', 'hysteria2', 'tuic', 'anytls', 'v2ray'):
+        if api.get('NodeType') not in ('vmess', 'vless', 'trojan', 'shadowsocks', 'hysteria', 'hysteria2', 'tuic', 'anytls', 'v2ray', 'http', 'mixed', 'masque'):
             raise ValueError('NodeType 无效')
         cert = options.get('CertConfig', {}) or {}
         if not isinstance(cert, dict) or cert.get('CertMode', '') not in ('', 'none', 'file', 'self', 'http', 'dns'):
@@ -137,7 +137,7 @@ def read_document(path):
 
 
 def cert_config(protocol):
-    default = 'file' if protocol in ('trojan', 'hysteria', 'hysteria2', 'tuic', 'anytls') else 'none'
+    default = 'file' if protocol in ('trojan', 'hysteria', 'hysteria2', 'tuic', 'anytls', 'masque') else 'none'
     print('REALITY/无 TLS 请选择 none；file=已有证书；http/dns 仅写配置，启动核心后才可能申请证书。')
     mode = choose('证书模式', ('none', 'file', 'http', 'dns'), default)
     if mode == 'none':

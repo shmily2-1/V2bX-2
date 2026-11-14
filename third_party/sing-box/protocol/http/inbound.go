@@ -26,6 +26,15 @@ func RegisterInbound(registry *inbound.Registry) {
 
 var _ adapter.TCPInjectableInbound = (*Inbound)(nil)
 
+func (h *Inbound) SetUsers(users []auth.User) *auth.Authenticator {
+	authenticator := auth.NewAuthenticator(users)
+	if authenticator == nil {
+		authenticator = &auth.Authenticator{}
+	}
+	h.server.SetAuthenticator(authenticator)
+	return authenticator
+}
+
 type Inbound struct {
 	inbound.Adapter
 	ctx         context.Context
@@ -49,13 +58,17 @@ func NewInbound(ctx context.Context, router adapter.Router, logger log.ContextLo
 	if !serveHTTP1 && !serveHTTP2 && options.SetSystemProxy {
 		return nil, E.New("set_system_proxy requires HTTP/1 or HTTP/2")
 	}
+	authenticator := auth.NewAuthenticator(options.Users)
+	if options.Users != nil && authenticator == nil {
+		authenticator = &auth.Authenticator{}
+	}
 	inbound := &Inbound{
 		Adapter: inbound.NewAdapter(C.TypeHTTP, tag),
 		ctx:     ctx,
 		router:  uot.NewRouter(router, logger),
 		logger:  logger,
 		server: http.NewServer(http.ServerOptions{
-			Authenticator: auth.NewAuthenticator(options.Users),
+			Authenticator: authenticator,
 			Logger:        logger,
 			HTTP1:         serveHTTP1,
 			HTTP2:         serveHTTP2,

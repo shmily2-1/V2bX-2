@@ -50,7 +50,7 @@ func New(c *conf.ApiConfig) (*Client, error) {
 		if errors.As(err, &v) {
 			// v.Response contains the last response from the server
 			// v.Err contains the original error
-			logrus.Error(v.Err)
+			logrus.Error(redactError(v.Err.Error(), c.Key))
 		}
 	})
 	client.SetBaseURL(c.APIHost)
@@ -60,6 +60,7 @@ func New(c *conf.ApiConfig) (*Client, error) {
 	case "v2ray":
 		c.NodeType = "vmess"
 	case
+		"http", "mixed", "masque",
 		"vmess",
 		"trojan",
 		"shadowsocks",

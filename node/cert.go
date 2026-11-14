@@ -17,6 +17,11 @@ import (
 )
 
 func (c *Controller) renewCertTask() error {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+	if c.closed {
+		return nil
+	}
 	l, err := NewLego(c.CertConfig)
 	if err != nil {
 		log.WithField("tag", c.tag).Info("new lego error: ", err)

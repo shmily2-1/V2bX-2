@@ -59,6 +59,25 @@ class ProvisionTests(unittest.TestCase):
                      'ApiKey': 'test-private&secret', 'NodeID': 1, 'NodeType': 'vless', 'CertConfig': {'CertMode': 'none'}}
         self.document = {'Cores': [{'Type': 'sing'}], 'Nodes': [self.node]}
 
+    def test_extended_protocol_credentials_and_masque_listeners(self):
+        self.node.update(Core='sing', NodeType='http')
+        self.info = {'protocol': 'http', 'server_port': 1080, 'tls': 0}
+        with self.assertRaises(p.ProvisionError):
+            p.inspect_node(self.node)
+        self.users[0]['password'] = 'local-test-password'
+        self.assertEqual(p.inspect_node(self.node)['transports'], ['tcp'])
+        self.node.update(Core='xray', NodeType='masque')
+        self.info = {'protocol': 'masque', 'server_port': 443}
+        self.assertEqual(p.inspect_node(self.node)['transports'], ['udp'])
+        self.node['CertConfig']['ALPN'] = ['h2', 'h3']
+        self.assertEqual(p.inspect_node(self.node)['transports'], ['tcp', 'udp'])
+
+    def test_xdrive_cannot_be_validated_by_a_tcp_listener(self):
+        self.node.update(Core='xray')
+        self.info['network'] = 'xdrive'
+        with self.assertRaisesRegex(p.ProvisionError, 'XDRIVE'):
+            p.inspect_node(self.node)
+
     def test_http_panel_is_accepted_without_confirmation(self):
         with patch.object(p.cfg, 'ask') as ask:
             self.assertTrue(p.confirm_http_panel(self.document, interactive=True))

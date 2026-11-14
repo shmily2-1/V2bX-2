@@ -42,7 +42,18 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go mod verify
+      - name: Install namespace test tools
+        run: sudo apt-get update && sudo apt-get install -y iproute2
       - run: go test -tags "$BUILD_TAGS" -count=1 -timeout 180s ./...
+      - name: Real binary lifecycle against an isolated loopback panel
+        run: |
+          go build -tags "$BUILD_TAGS" -o "$RUNNER_TEMP/V2bX-runtime" .
+          python3 scripts/test-runtime.py "$RUNNER_TEMP/V2bX-runtime"
+          python3 scripts/test-local-services.py --binary "$RUNNER_TEMP/V2bX-runtime" --workdir "$RUNNER_TEMP/local-service-runtime"
+      - name: Protocol and service data planes in disposable namespaces
+        run: |
+          go test -tags "$BUILD_TAGS" -c -o "$RUNNER_TEMP/core-services.test" ./core
+          sudo python3 scripts/test-protocol-services-netns.py --core-test "$RUNNER_TEMP/core-services.test" --workdir "$RUNNER_TEMP/isolated-protocol-services"
       - name: Check embedded REALITY ClientHello compatibility
         run: go test -tags "$BUILD_TAGS" -count=1 -timeout 60s -run '^TestReality' github.com/sagernet/sing-box/common/tls
       - name: Check compatibility patch reproducibility
@@ -165,5 +176,6 @@ jobs:
         run: |
           cp install.sh V2bX.sh initconfig.sh configure.py provision.py system-tools.py artifacts/
           (cd artifacts && sha256sum install.sh > install.sh.sha256 && sha256sum V2bX.sh > V2bX.sh.sha256 && sha256sum initconfig.sh > initconfig.sh.sha256 && sha256sum configure.py > configure.py.sha256 && sha256sum provision.py > provision.py.sha256 && sha256sum system-tools.py > system-tools.py.sha256)
+          python3 -c 'from pathlib import Path; Path("release-notes.md").write_text(Path("docs/RELEASE-NOTES.md").read_text().split("\n---\n", 1)[0], encoding="utf-8")'
           gh release create "$VERSION" artifacts/* --verify-tag --title "$VERSION" \
-            --notes-file docs/RELEASE-NOTES.md --prerelease
+            --notes-file release-notes.md --prerelease

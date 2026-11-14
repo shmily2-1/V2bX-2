@@ -13,6 +13,7 @@ import (
 
 	"github.com/shmily2-1/V2bX-2/api/panel"
 	"github.com/shmily2-1/V2bX-2/conf"
+	vCore "github.com/shmily2-1/V2bX-2/core"
 	"github.com/xtls/xray-core/common/net"
 	"github.com/xtls/xray-core/core"
 	coreConf "github.com/xtls/xray-core/infra/conf"
@@ -20,10 +21,29 @@ import (
 
 // BuildInbound build Inbound config for different protocol
 func buildInbound(option *conf.Options, nodeInfo *panel.NodeInfo, tag string) (*core.InboundHandlerConfig, error) {
+	if err := vCore.ValidateNode("xray", nodeInfo, option); err != nil {
+		return nil, err
+	}
+	if option.XrayOptions == nil {
+		option.XrayOptions = conf.NewXrayOptions()
+		if len(option.RawOptions) > 0 {
+			if err := json.Unmarshal(option.RawOptions, option.XrayOptions); err != nil {
+				return nil, fmt.Errorf("decode xray options: %w", err)
+			}
+		}
+	}
 	in := &coreConf.InboundDetourConfig{}
 	var err error
 	var network string
 	switch nodeInfo.Type {
+	case "masque":
+		in.Protocol, network = "masque", "masque"
+		settings, marshalErr := json.Marshal(&coreConf.MasqueServerConfig{Address: nodeInfo.Masque.Address, MTU: nodeInfo.Masque.MTU})
+		if marshalErr != nil {
+			return nil, marshalErr
+		}
+		in.Settings = (*json.RawMessage)(&settings)
+		in.StreamSetting = &coreConf.StreamConfig{Network: ptrTransport("masque"), MASQUESettings: &coreConf.MasqueConfig{Host: nodeInfo.Masque.Host, Path: nodeInfo.Masque.Path}}
 	case "vmess", "vless":
 		err = buildV2ray(option, nodeInfo, in)
 		network = nodeInfo.VAllss.Network
@@ -43,9 +63,7 @@ func buildInbound(option *conf.Options, nodeInfo *panel.NodeInfo, tag string) (*
 	if err != nil {
 		return nil, err
 	}
-	if network == "" {
-		network = "tcp"
-	}
+	network = normalizeNetwork(network)
 	if in.StreamSetting == nil {
 		t := coreConf.TransportProtocol(network)
 		in.StreamSetting = &coreConf.StreamConfig{Network: &t}
@@ -117,15 +135,35 @@ func buildInbound(option *conf.Options, nodeInfo *panel.NodeInfo, tag string) (*
 					},
 				},
 				RejectUnknownSNI: option.CertConfig.RejectUnknownSni,
+				MinVersion:       option.CertConfig.MinVersion,
+				MaxVersion:       option.CertConfig.MaxVersion,
+				CipherSuites:     strings.Join(option.CertConfig.CipherSuites, ":"),
+			}
+			if len(option.CertConfig.ALPN) > 0 {
+				alpn := coreConf.StringList(option.CertConfig.ALPN)
+				in.StreamSetting.TLSSettings.ALPN = &alpn
+			}
+			if keys, err := option.CertConfig.ECHKeys(); err != nil {
+				return nil, err
+			} else if len(keys) > 0 {
+				in.StreamSetting.TLSSettings.ECHServerKeys = base64.StdEncoding.EncodeToString(keys)
 			}
 		}
 	case panel.Reality:
 		// Reality
 		in.StreamSetting.Security = "reality"
 		v := nodeInfo.VAllss
+		names, err := v.TlsSettings.EffectiveServerNames()
+		if err != nil {
+			return nil, err
+		}
+		shortIDs, err := v.TlsSettings.EffectiveShortIDs()
+		if err != nil {
+			return nil, err
+		}
 		dest := v.TlsSettings.Dest
 		if dest == "" {
-			dest = v.TlsSettings.ServerName
+			dest = names[0]
 		}
 		xver := v.TlsSettings.Xver
 		if xver == 0 {
@@ -143,12 +181,12 @@ func buildInbound(option *conf.Options, nodeInfo *panel.NodeInfo, tag string) (*
 			Dest:         d,
 			Xver:         xver,
 			Show:         false,
-			ServerNames:  []string{v.TlsSettings.ServerName},
+			ServerNames:  names,
 			PrivateKey:   v.TlsSettings.PrivateKey,
 			MinClientVer: v.RealityConfig.MinClientVer,
 			MaxClientVer: v.RealityConfig.MaxClientVer,
-			MaxTimeDiff:  uint64(mtd.Microseconds()),
-			ShortIds:     []string{v.TlsSettings.ShortId},
+			MaxTimeDiff:  uint64(mtd.Milliseconds()),
+			ShortIds:     shortIDs,
 			Mldsa65Seed:  v.TlsSettings.Mldsa65Seed,
 		}
 	default:
@@ -164,6 +202,9 @@ func buildV2ray(config *conf.Options, nodeInfo *panel.NodeInfo, inbound *coreCon
 		//Set vless
 		inbound.Protocol = "vless"
 		if config.XrayOptions.EnableFallback {
+			if v.Encryption != "" && v.Encryption != "none" {
+				return fmt.Errorf("VLESS encryption with Fallback is not adapted; refusing to disable encryption")
+			}
 			// Set fallback
 			fallbackConfigs, err := buildVlessFallbacks(config.XrayOptions.FallBackConfigs)
 			if err != nil {
@@ -180,7 +221,7 @@ func buildV2ray(config *conf.Options, nodeInfo *panel.NodeInfo, inbound *coreCon
 		} else {
 			var err error
 			decryption := "none"
-			if nodeInfo.VAllss.Encryption != "" {
+			if nodeInfo.VAllss.Encryption != "" && nodeInfo.VAllss.Encryption != "none" {
 				switch nodeInfo.VAllss.Encryption {
 				case "mlkem768x25519plus":
 					encSettings := nodeInfo.VAllss.EncryptionSettings
@@ -216,41 +257,9 @@ func buildV2ray(config *conf.Options, nodeInfo *panel.NodeInfo, inbound *coreCon
 		}
 		inbound.Settings = (*json.RawMessage)(&s)
 	}
-	t := coreConf.TransportProtocol(v.Network)
-	inbound.StreamSetting = &coreConf.StreamConfig{Network: &t}
-	if len(v.NetworkSettings) == 0 {
-		return nil
-	}
-	switch v.Network {
-	case "tcp":
-		err := json.Unmarshal(v.NetworkSettings, &inbound.StreamSetting.TCPSettings)
-		if err != nil {
-			return fmt.Errorf("unmarshal tcp settings error: %s", err)
-		}
-	case "ws":
-		err := json.Unmarshal(v.NetworkSettings, &inbound.StreamSetting.WSSettings)
-		if err != nil {
-			return fmt.Errorf("unmarshal ws settings error: %s", err)
-		}
-	case "grpc":
-		err := json.Unmarshal(v.NetworkSettings, &inbound.StreamSetting.GRPCSettings)
-		if err != nil {
-			return fmt.Errorf("unmarshal grpc settings error: %s", err)
-		}
-	case "httpupgrade":
-		err := json.Unmarshal(v.NetworkSettings, &inbound.StreamSetting.HTTPUPGRADESettings)
-		if err != nil {
-			return fmt.Errorf("unmarshal httpupgrade settings error: %s", err)
-		}
-	case "splithttp", "xhttp":
-		err := json.Unmarshal(v.NetworkSettings, &inbound.StreamSetting.SplitHTTPSettings)
-		if err != nil {
-			return fmt.Errorf("unmarshal xhttp settings error: %s", err)
-		}
-	default:
-		return errors.New("the network type is not vail")
-	}
-	return nil
+	stream, err := buildStream(v.Network, v.NetworkSettings)
+	inbound.StreamSetting = stream
+	return err
 }
 
 func buildTrojan(config *conf.Options, nodeInfo *panel.NodeInfo, inbound *coreConf.InboundDetourConfig) error {
@@ -273,35 +282,73 @@ func buildTrojan(config *conf.Options, nodeInfo *panel.NodeInfo, inbound *coreCo
 		s := []byte("{}")
 		inbound.Settings = (*json.RawMessage)(&s)
 	}
-	network := v.Network
-	if network == "" {
-		network = "tcp"
+	stream, err := buildStream(v.Network, v.NetworkSettings)
+	inbound.StreamSetting = stream
+	return err
+}
+
+func normalizeNetwork(network string) string {
+	switch network {
+	case "", "raw":
+		return "tcp"
+	case "mkcp":
+		return "kcp"
+	default:
+		return network
 	}
+}
+
+func buildStream(network string, settings json.RawMessage) (*coreConf.StreamConfig, error) {
+	network = normalizeNetwork(network)
 	t := coreConf.TransportProtocol(network)
-	inbound.StreamSetting = &coreConf.StreamConfig{Network: &t}
-	if len(v.NetworkSettings) == 0 {
-		return nil
-	}
+	stream := &coreConf.StreamConfig{Network: &t}
+	var target any
 	switch network {
 	case "tcp":
-		err := json.Unmarshal(v.NetworkSettings, &inbound.StreamSetting.TCPSettings)
-		if err != nil {
-			return fmt.Errorf("unmarshal tcp settings error: %s", err)
-		}
+		target = &stream.TCPSettings
 	case "ws":
-		err := json.Unmarshal(v.NetworkSettings, &inbound.StreamSetting.WSSettings)
-		if err != nil {
-			return fmt.Errorf("unmarshal ws settings error: %s", err)
-		}
+		target = &stream.WSSettings
 	case "grpc":
-		err := json.Unmarshal(v.NetworkSettings, &inbound.StreamSetting.GRPCSettings)
-		if err != nil {
-			return fmt.Errorf("unmarshal grpc settings error: %s", err)
-		}
+		target = &stream.GRPCSettings
+	case "httpupgrade":
+		target = &stream.HTTPUPGRADESettings
+	case "splithttp", "xhttp":
+		target = &stream.SplitHTTPSettings
+	case "kcp":
+		target = &stream.KCPSettings
+	case "xdrive":
+		target = &stream.XDRIVESettings
 	default:
-		return errors.New("the network type is not vail")
+		return nil, fmt.Errorf("xray transport %q is not adapted", network)
 	}
-	return nil
+	if len(settings) > 0 {
+		if network == "kcp" {
+			var legacy struct {
+				Seed   string `json:"seed"`
+				Header struct {
+					Type string `json:"type"`
+				} `json:"header"`
+				Congestion      *bool `json:"congestion"`
+				ReadBufferSize  *int  `json:"readBufferSize"`
+				WriteBufferSize *int  `json:"writeBufferSize"`
+			}
+			if err := json.Unmarshal(settings, &legacy); err != nil {
+				return nil, fmt.Errorf("decode KCP settings: %w", err)
+			}
+			if legacy.Seed != "" || (legacy.Header.Type != "" && legacy.Header.Type != "none") || legacy.Congestion != nil || legacy.ReadBufferSize != nil || legacy.WriteBufferSize != nil {
+				return nil, fmt.Errorf("this Xray version no longer applies legacy KCP seed/header/congestion/buffer settings")
+			}
+		}
+		if err := json.Unmarshal(settings, target); err != nil {
+			return nil, fmt.Errorf("decode %s settings: %w", network, err)
+		}
+	}
+	return stream, nil
+}
+
+func ptrTransport(network string) *coreConf.TransportProtocol {
+	value := coreConf.TransportProtocol(network)
+	return &value
 }
 
 func buildShadowsocks(config *conf.Options, nodeInfo *panel.NodeInfo, inbound *coreConf.InboundDetourConfig) error {

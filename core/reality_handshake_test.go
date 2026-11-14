@@ -78,6 +78,10 @@ func TestRealityHandshakeInteroperability(t *testing.T) {
 						},
 					},
 				}
+				info.VAllss.TlsSettings.ShortIds = []string{"1234", "5678"}
+				if serverCore == "xray" {
+					info.VAllss.TlsSettings.ServerNames = []string{"localhost", "second.test"}
+				}
 				engine, err := core.NewCore([]conf.CoreConfig{{
 					Type: serverCore, SingConfig: conf.NewSingConfig(), XrayConfig: conf.NewXrayConfig(),
 				}})
@@ -124,7 +128,7 @@ func TestRealityHandshakeInteroperability(t *testing.T) {
 					ALPN: []string{"h2", "http/1.1"},
 					UTLS: &option.OutboundUTLSOptions{Enabled: true, Fingerprint: "chrome"},
 					Reality: &option.OutboundRealityOptions{
-						Enabled: true, PublicKey: base64.RawURLEncoding.EncodeToString(key.PublicKey().Bytes()), ShortID: "1234",
+						Enabled: true, PublicKey: base64.RawURLEncoding.EncodeToString(key.PublicKey().Bytes()), ShortID: "5678",
 					},
 				})
 				if err != nil {

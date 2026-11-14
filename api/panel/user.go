@@ -18,6 +18,7 @@ type OnlineUser struct {
 type UserInfo struct {
 	Id          int    `json:"id" msgpack:"id"`
 	Uuid        string `json:"uuid" msgpack:"uuid"`
+	Password    string `json:"password,omitempty" msgpack:"password"`
 	SpeedLimit  int    `json:"speed_limit" msgpack:"speed_limit"`
 	DeviceLimit int    `json:"device_limit" msgpack:"device_limit"`
 }
@@ -65,6 +66,7 @@ func (c *Client) GetUserList() ([]UserInfo, error) {
 		return nil, fmt.Errorf("decode user list error: missing or null users array")
 	}
 	c.userEtag = r.Header().Get("ETag")
+	c.UserList = userlist
 	return userlist.Users, nil
 }
 
@@ -75,7 +77,7 @@ func (c *Client) GetUserAlive() (map[int]int, error) {
 	r, err := c.client.R().
 		ForceContentType("application/json").
 		Get(path)
-	if err != nil || r.StatusCode() >= 399 {
+	if err != nil || r == nil || r.StatusCode() >= 399 {
 		c.AliveMap.Alive = make(map[int]int)
 		return c.AliveMap.Alive, nil
 	}
@@ -101,18 +103,29 @@ type UserTraffic struct {
 
 // ReportUserTraffic reports the user traffic
 func (c *Client) ReportUserTraffic(userTraffic []UserTraffic) error {
+	return c.ReportTrafficBatch(userTraffic, "")
+}
+
+func (c *Client) ReportTrafficBatch(userTraffic []UserTraffic, batchID string) error {
 	data := make(map[int][]int64, len(userTraffic))
 	for i := range userTraffic {
 		data[userTraffic[i].UID] = []int64{userTraffic[i].Upload, userTraffic[i].Download}
 	}
 	const path = "/api/v1/server/UniProxy/push"
-	r, err := c.client.R().
+	req := c.client.R()
+	if batchID != "" {
+		req.SetHeader("X-Traffic-Batch", batchID)
+	}
+	r, err := req.
 		SetBody(data).
 		ForceContentType("application/json").
 		Post(path)
 	err = c.checkResponse(r, path, err)
 	if err != nil {
 		return err
+	}
+	if batchID != "" && r.Header().Get("X-Traffic-Ack") != batchID {
+		return fmt.Errorf("traffic batch acknowledgement mismatch")
 	}
 	return nil
 }

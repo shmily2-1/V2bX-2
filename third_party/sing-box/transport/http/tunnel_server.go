@@ -26,17 +26,18 @@ type TunnelRequest interface {
 }
 
 func (s *Server) authenticate(ctx context.Context, request *http.Request, headerName string) (context.Context, error) {
-	if s.authenticator == nil {
+	authenticator := s.authenticator.Load()
+	if authenticator == nil {
 		return ctx, nil
 	}
 	username, password, valid := badhttp.ParseBasicAuth(request.Header.Get(headerName))
 	if !valid {
 		return nil, E.New("authentication failed: missing or malformed ", headerName)
 	}
-	if !s.authenticator.Verify(username, password) {
+	if !authenticator.Verify(username, password) {
 		return nil, E.New("authentication failed: username=", username)
 	}
-	return auth.ContextWithUser(ctx, username), nil
+	return auth.ContextWithUser(ContextWithAuthenticator(ctx, authenticator), username), nil
 }
 
 func (s *Server) upgradeTunnelHandler(request *http.Request) (string, TunnelHandler) {

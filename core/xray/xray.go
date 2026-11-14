@@ -41,6 +41,7 @@ type Xray struct {
 
 type UserMap struct {
 	uidMap  map[string]int
+	tags    map[string]map[string]struct{}
 	mapLock sync.RWMutex
 }
 
@@ -49,6 +50,7 @@ func New(c *conf.CoreConfig) (vCore.Core, error) {
 		Server: getCore(c.XrayConfig),
 		users: &UserMap{
 			uidMap: make(map[string]int),
+			tags:   make(map[string]map[string]struct{}),
 		},
 		nodeReportMinTrafficBytes: make(map[string]int64),
 	}, nil
@@ -212,6 +214,7 @@ func (c *Xray) Protocols() []string {
 		"vless",
 		"shadowsocks",
 		"trojan",
+		"masque",
 	}
 }
 

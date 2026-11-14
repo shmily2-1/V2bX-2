@@ -14,11 +14,14 @@ import (
 	"encoding/json"
 
 	"github.com/sagernet/sing-box/option"
+	"github.com/sagernet/sing/common/auth"
 	F "github.com/sagernet/sing/common/format"
 	"github.com/sagernet/sing/common/json/badoption"
 	"github.com/shmily2-1/V2bX-2/api/panel"
+	"github.com/shmily2-1/V2bX-2/common/format"
 	"github.com/shmily2-1/V2bX-2/common/porthop"
 	"github.com/shmily2-1/V2bX-2/conf"
+	vCore "github.com/shmily2-1/V2bX-2/core"
 )
 
 type HttpNetworkConfig struct {
@@ -53,6 +56,17 @@ type HttpupgradeNetworkConfig struct {
 }
 
 func getInboundOptions(tag string, info *panel.NodeInfo, c *conf.Options) (option.Inbound, error) {
+	if err := vCore.ValidateNode("sing", info, c); err != nil {
+		return option.Inbound{}, err
+	}
+	if c.SingOptions == nil {
+		c.SingOptions = conf.NewSingOptions()
+		if len(c.RawOptions) > 0 {
+			if err := json.Unmarshal(c.RawOptions, c.SingOptions); err != nil {
+				return option.Inbound{}, fmt.Errorf("decode sing options: %w", err)
+			}
+		}
+	}
 	addr, err := netip.ParseAddr(c.ListenIP)
 	if err != nil {
 		return option.Inbound{}, fmt.Errorf("the listen ip not vail")
@@ -88,6 +102,13 @@ func getInboundOptions(tag string, info *panel.NodeInfo, c *conf.Options) (optio
 			tls.Enabled = true
 			tls.CertificatePath = c.CertConfig.CertFile
 			tls.KeyPath = c.CertConfig.KeyFile
+			tls.ALPN = c.CertConfig.ALPN
+			tls.MinVersion = c.CertConfig.MinVersion
+			tls.MaxVersion = c.CertConfig.MaxVersion
+			tls.CipherSuites = c.CertConfig.CipherSuites
+			if c.CertConfig.ECHKeyFile != "" {
+				tls.ECH = &option.InboundECHOptions{Enabled: true, KeyPath: c.CertConfig.ECHKeyFile}
+			}
 		}
 	case panel.Reality:
 		if info.VAllss.TlsSettings.Xver != 0 {
@@ -95,7 +116,15 @@ func getInboundOptions(tag string, info *panel.NodeInfo, c *conf.Options) (optio
 		}
 		tls.Enabled = true
 		v := info.VAllss
-		tls.ServerName = v.TlsSettings.ServerName
+		names, err := v.TlsSettings.EffectiveServerNames()
+		if err != nil {
+			return option.Inbound{}, err
+		}
+		shortIDs, err := v.TlsSettings.EffectiveShortIDs()
+		if err != nil {
+			return option.Inbound{}, err
+		}
+		tls.ServerName = names[0]
 		port, _ := strconv.Atoi(v.TlsSettings.ServerPort)
 		var dest string
 		if v.TlsSettings.Dest != "" {
@@ -107,7 +136,7 @@ func getInboundOptions(tag string, info *panel.NodeInfo, c *conf.Options) (optio
 		mtd, _ := time.ParseDuration(v.RealityConfig.MaxTimeDiff)
 		tls.Reality = &option.InboundRealityOptions{
 			Enabled:    true,
-			ShortID:    []string{v.TlsSettings.ShortId},
+			ShortID:    shortIDs,
 			PrivateKey: v.TlsSettings.PrivateKey,
 			Handshake: option.InboundRealityHandshakeOptions{
 				ServerOptions: option.ServerOptions{
@@ -122,12 +151,20 @@ func getInboundOptions(tag string, info *panel.NodeInfo, c *conf.Options) (optio
 		Tag: tag,
 	}
 	switch info.Type {
+	case "http":
+		return option.Inbound{Type: "http", Tag: tag, Options: &option.HTTPInboundOptions{ListenOptions: listen, Users: []auth.User{}, InboundTLSOptionsContainer: option.InboundTLSOptionsContainer{TLS: &tls}}}, nil
+	case "mixed":
+		return option.Inbound{Type: "mixed", Tag: tag, Options: &option.HTTPMixedInboundOptions{ListenOptions: listen, Users: []auth.User{}, InboundTLSOptionsContainer: option.InboundTLSOptionsContainer{TLS: &tls}}}, nil
 	case "vmess", "vless":
 		n := info.VAllss
-		t := option.V2RayTransportOptions{
-			Type: n.Network,
+		networkType := n.Network
+		if networkType == "" || networkType == "raw" {
+			networkType = "tcp"
 		}
-		switch n.Network {
+		t := option.V2RayTransportOptions{
+			Type: networkType,
+		}
+		switch networkType {
 		case "tcp":
 			if len(n.NetworkSettings) != 0 {
 				network := HttpNetworkConfig{}
@@ -261,10 +298,14 @@ func getInboundOptions(tag string, info *panel.NodeInfo, c *conf.Options) (optio
 		in.Options = ssoption
 	case "trojan":
 		n := info.Trojan
-		t := option.V2RayTransportOptions{
-			Type: n.Network,
+		networkType := n.Network
+		if networkType == "" || networkType == "raw" {
+			networkType = "tcp"
 		}
-		switch n.Network {
+		t := option.V2RayTransportOptions{
+			Type: networkType,
+		}
+		switch networkType {
 		case "tcp":
 			t.Type = ""
 		case "ws":
@@ -310,8 +351,16 @@ func getInboundOptions(tag string, info *panel.NodeInfo, c *conf.Options) (optio
 			t.GRPCOptions = option.V2RayGRPCOptions{
 				ServiceName: network.ServiceName,
 			}
+		case "httpupgrade":
+			network := HttpupgradeNetworkConfig{}
+			if len(n.NetworkSettings) > 0 {
+				if err := json.Unmarshal(n.NetworkSettings, &network); err != nil {
+					return option.Inbound{}, fmt.Errorf("decode HTTPUpgrade settings: %w", err)
+				}
+			}
+			t.HTTPUpgradeOptions = option.V2RayHTTPUpgradeOptions{Path: network.Path, Host: network.Host}
 		default:
-			t.Type = ""
+			return option.Inbound{}, fmt.Errorf("unsupported trojan transport %q", networkType)
 		}
 		in.Type = "trojan"
 		trojanoption := &option.TrojanInboundOptions{
@@ -433,6 +482,9 @@ func (b *Sing) AddNode(tag string, info *panel.NodeInfo, config *conf.Options) e
 		return err
 	}
 	in := b.box.Inbound()
+	if info.Type == "http" || info.Type == "mixed" {
+		b.hookServer.setManaged(tag, "", false)
+	}
 	err = in.Create(
 		b.ctx,
 		b.box.Router(),
@@ -455,6 +507,14 @@ func (b *Sing) AddNode(tag string, info *panel.NodeInfo, config *conf.Options) e
 		}
 	}
 	b.nodeReportMinTrafficBytes[tag] = config.ReportMinTraffic * 1024
+	if info.Type == "http" || info.Type == "mixed" {
+		b.httpUsers[tag] = make(map[string]panel.UserInfo)
+		b.hookServer.setManaged(tag, "", false)
+		created, _ := in.Get(tag)
+		b.hookServer.setManagedAuth(tag, created.(interface {
+			SetUsers([]auth.User) *auth.Authenticator
+		}).SetUsers(nil))
+	}
 	return nil
 }
 
@@ -463,6 +523,13 @@ func (b *Sing) DelNode(tag string) error {
 	defer b.nodesMu.Unlock()
 	in := b.box.Inbound()
 	var err error
+	b.hookServer.closeManaged(tag)
+	b.users.mapLock.Lock()
+	for _, u := range b.httpUsers[tag] {
+		delete(b.users.uidMap, format.UserTag(tag, u.Uuid))
+	}
+	b.users.mapLock.Unlock()
+	delete(b.httpUsers, tag)
 	if _, exists := in.Get(tag); exists {
 		err = in.Remove(tag)
 	} else if _, pending := b.portRedirects[tag]; !pending {

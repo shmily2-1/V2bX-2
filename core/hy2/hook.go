@@ -45,8 +45,7 @@ func (h *HookServer) LogTraffic(id string, tx, rx uint64) (ok bool) {
 	}
 
 	if c, exists = h.Counter.Load(h.Tag); !exists {
-		c = counter.NewTrafficCounter()
-		h.Counter.Store(h.Tag, c)
+		c, _ = h.Counter.LoadOrStore(h.Tag, counter.NewTrafficCounter())
 	}
 
 	if tc, ok := c.(*counter.TrafficCounter); ok {

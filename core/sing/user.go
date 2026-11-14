@@ -15,10 +15,18 @@ import (
 	"github.com/sagernet/sing-box/protocol/vmess"
 	"github.com/shmily2-1/V2bX-2/api/panel"
 	"github.com/shmily2-1/V2bX-2/common/counter"
+	"github.com/shmily2-1/V2bX-2/common/format"
 	"github.com/shmily2-1/V2bX-2/core"
 )
 
 func (b *Sing) AddUsers(p *core.AddUsersParams) (added int, err error) {
+	if p.Type == "http" || p.Type == "mixed" {
+		err := b.updateHTTPUsers(p.Tag, p.Users, nil)
+		if err != nil {
+			return 0, err
+		}
+		return len(p.Users), nil
+	}
 	in, found := b.box.Inbound().Get(p.Tag)
 	if !found {
 		return 0, errors.New("the inbound not found")
@@ -26,7 +34,7 @@ func (b *Sing) AddUsers(p *core.AddUsersParams) (added int, err error) {
 	b.users.mapLock.Lock()
 	defer b.users.mapLock.Unlock()
 	for i := range p.Users {
-		b.users.uidMap[p.Users[i].Uuid] = p.Users[i].Id
+		b.users.uidMap[format.UserTag(p.Tag, p.Users[i].Uuid)] = p.Users[i].Id
 	}
 	switch p.NodeInfo.Type {
 	case "vless":
@@ -124,10 +132,8 @@ func (b *Sing) AddUsers(p *core.AddUsersParams) (added int, err error) {
 func (b *Sing) GetUserTraffic(tag, uuid string, reset bool) (up int64, down int64) {
 	if v, ok := b.hookServer.counter.Load(tag); ok {
 		c := v.(*counter.TrafficCounter)
-		up = c.GetUpCount(uuid)
-		down = c.GetDownCount(uuid)
-		if reset {
-			c.Reset(uuid)
+		if storage, ok := c.Counters.Load(uuid); ok {
+			up, down = storage.(*counter.TrafficStorage).Snapshot(reset)
 		}
 		return
 	}
@@ -149,17 +155,14 @@ func (b *Sing) GetUserTrafficSlice(tag string, reset bool) ([]panel.UserTraffic,
 			traffic := value.(*counter.TrafficStorage)
 			up := traffic.UpCounter.Load()
 			down := traffic.DownCounter.Load()
-			if up+down > minTraffic {
-				if reset {
-					traffic.UpCounter.Store(0)
-					traffic.DownCounter.Store(0)
-				}
-				if b.users.uidMap[uuid] == 0 {
+			if up+down > minTraffic || (reset && up+down > 0) {
+				up, down = traffic.Snapshot(reset)
+				if b.users.uidMap[format.UserTag(tag, uuid)] == 0 {
 					c.Delete(uuid)
 					return true
 				}
 				trafficSlice = append(trafficSlice, panel.UserTraffic{
-					UID:      b.users.uidMap[uuid],
+					UID:      b.users.uidMap[format.UserTag(tag, uuid)],
 					Upload:   up,
 					Download: down,
 				})
@@ -179,6 +182,9 @@ type UserDeleter interface {
 }
 
 func (b *Sing) DelUsers(users []panel.UserInfo, tag string, info *panel.NodeInfo) error {
+	if info.Type == "http" || info.Type == "mixed" {
+		return b.updateHTTPUsers(tag, nil, users)
+	}
 	var del UserDeleter
 	if i, found := b.box.Inbound().Get(tag); found {
 		switch info.Type {
@@ -210,7 +216,7 @@ func (b *Sing) DelUsers(users []panel.UserInfo, tag string, info *panel.NodeInfo
 			c := v.(*counter.TrafficCounter)
 			c.Delete(users[i].Uuid)
 		}
-		delete(b.users.uidMap, users[i].Uuid)
+		delete(b.users.uidMap, format.UserTag(tag, users[i].Uuid))
 		uuids[i] = users[i].Uuid
 	}
 	err := del.DelUsers(uuids)

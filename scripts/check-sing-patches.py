@@ -35,6 +35,14 @@ def main():
         cwd=ROOT, text=True))
     if "Error" in info:
         raise RuntimeError(info["Error"])
+    origin = info.get("Origin", {}).get("Hash")
+    if not origin:
+        # Some module proxies omit VCS metadata. Only reuse the recorded
+        # commit for the identical checksummed upstream module.
+        recorded = json.loads(MANIFEST.read_text(encoding="utf-8"))
+        if info.get("Sum") != recorded.get("module_sum") or VERSION != recorded.get("version"):
+            raise RuntimeError("Module origin missing and checksum differs from the reviewed baseline")
+        origin = recorded["upstream_commit"]
     upstream = snapshot(pathlib.Path(info["Dir"]), OMIT)
     embedded = snapshot(EMBEDDED)
     changes = {}
@@ -42,7 +50,7 @@ def main():
         if upstream.get(path) != embedded.get(path):
             changes[path] = {"upstream_sha256": upstream.get(path), "patched_sha256": embedded.get(path)}
     result = {"module": "github.com/sagernet/sing-box", "version": VERSION,
-              "module_sum": info["Sum"], "upstream_commit": info["Origin"]["Hash"],
+              "module_sum": info["Sum"], "upstream_commit": origin,
               "omitted_top_level": sorted(OMIT), "patches": changes}
     if sys.argv[1:] == ["--write"]:
         MANIFEST.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")

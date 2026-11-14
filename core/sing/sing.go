@@ -15,6 +15,7 @@ import (
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing/common/json"
+	"github.com/shmily2-1/V2bX-2/api/panel"
 	"github.com/shmily2-1/V2bX-2/conf"
 	vCore "github.com/shmily2-1/V2bX-2/core"
 )
@@ -27,6 +28,7 @@ type DNSConfig struct {
 }
 
 type Sing struct {
+	httpUsers                 map[string]map[string]panel.UserInfo
 	nodesMu                   sync.RWMutex
 	portRedirects             map[string]io.Closer
 	closed                    bool
@@ -89,6 +91,7 @@ func New(c *conf.CoreConfig) (vCore.Core, error) {
 	}
 	b.Router().AppendTracker(hs)
 	return &Sing{
+		httpUsers:  make(map[string]map[string]panel.UserInfo),
 		ctx:        ctx,
 		box:        b,
 		hookServer: hs,
@@ -134,6 +137,7 @@ func (b *Sing) Protocols() []string {
 		"anytls",
 		"hysteria",
 		"hysteria2",
+		"http", "mixed",
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"github.com/shmily2-1/V2bX-2/api/panel"
 	"github.com/shmily2-1/V2bX-2/common/porthop"
 	"github.com/shmily2-1/V2bX-2/conf"
+	vCore "github.com/shmily2-1/V2bX-2/core"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 )
@@ -25,6 +26,9 @@ type Hysteria2node struct {
 }
 
 func (h *Hysteria2) AddNode(tag string, info *panel.NodeInfo, config *conf.Options) error {
+	if err := vCore.ValidateNode("hysteria2", info, config); err != nil {
+		return err
+	}
 	h.nodesMu.Lock()
 	defer h.nodesMu.Unlock()
 	if h.closed {

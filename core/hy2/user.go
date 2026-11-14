@@ -85,11 +85,8 @@ func (h *Hysteria2) GetUserTrafficSlice(tag string, reset bool) ([]panel.UserTra
 			traffic := value.(*counter.TrafficStorage)
 			up := traffic.UpCounter.Load()
 			down := traffic.DownCounter.Load()
-			if up+down > hook.ReportMinTrafficBytes {
-				if reset {
-					traffic.UpCounter.Store(0)
-					traffic.DownCounter.Store(0)
-				}
+			if up+down > hook.ReportMinTrafficBytes || (reset && up+down > 0) {
+				up, down = traffic.Snapshot(reset)
 				if h.Auth.usersMap[uuid] == 0 {
 					c.Delete(uuid)
 					return true

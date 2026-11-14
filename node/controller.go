@@ -1,7 +1,9 @@
 package node
 
 import (
+	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/shmily2-1/V2bX-2/api/panel"
 	"github.com/shmily2-1/V2bX-2/common/task"
@@ -12,6 +14,14 @@ import (
 )
 
 type Controller struct {
+	stateMu                   sync.Mutex
+	closed                    bool
+	nodeAdded                 bool
+	trafficStatePath          string
+	pendingTraffic            map[int]panel.UserTraffic
+	inflightTraffic           []panel.UserTraffic
+	inflightID                string
+	pendingNodeInfo           *panel.NodeInfo
 	server                    vCore.Core
 	apiClient                 *panel.Client
 	tag                       string
@@ -40,11 +50,22 @@ func NewController(server vCore.Core, api *panel.Client, config *conf.Options) *
 
 // Start implement the Start() function of the service interface
 func (c *Controller) Start() error {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+	if c.LimitConfig.EnableDynamicSpeedLimit {
+		d := c.LimitConfig.DynamicSpeedLimitConfig
+		if d == nil || d.Periodic <= 0 || d.Traffic <= 0 || d.SpeedLimit <= 0 || d.ExpireTime <= 0 {
+			return fmt.Errorf("dynamic speed limit requires positive Periodic, Traffic, SpeedLimit and ExpireTime")
+		}
+	}
 	// First fetch Node Info
 	var err error
 	node, err := c.apiClient.GetNodeInfo()
 	if err != nil {
 		return fmt.Errorf("get node info error: %s", err)
+	}
+	if node == nil || node.PullInterval <= 0 || node.PushInterval <= 0 {
+		return fmt.Errorf("node requires positive pull and push intervals")
 	}
 	// Update user
 	c.userList, err = c.apiClient.GetUserList()
@@ -52,7 +73,7 @@ func (c *Controller) Start() error {
 		return fmt.Errorf("get user list error: %s", err)
 	}
 	if len(c.userList) == 0 {
-		if node.Type != "hysteria2" {
+		if node.Type != "hysteria2" && node.Type != "http" && node.Type != "mixed" && node.Type != "masque" {
 			return fmt.Errorf("no authorized users; waiting mode is only verified for hysteria2")
 		}
 		log.Warn("No authorized users; starting a deny-all node and waiting for panel assignments")
@@ -66,6 +87,21 @@ func (c *Controller) Start() error {
 	} else {
 		c.tag = c.Options.Name
 	}
+	if err := c.loadTrafficState(); err != nil {
+		return fmt.Errorf("load pending traffic: %w", err)
+	}
+	started := false
+	defer func() {
+		if !started {
+			if c.nodeAdded {
+				_ = c.server.DelNode(c.tag)
+				c.nodeAdded = false
+			}
+			if c.limiter != nil {
+				limiter.DeleteLimiter(c.tag)
+			}
+		}
+	}()
 
 	// add limiter
 	l := limiter.AddLimiter(c.tag, &c.LimitConfig, c.userList, c.aliveMap)
@@ -85,6 +121,7 @@ func (c *Controller) Start() error {
 	if err != nil {
 		return fmt.Errorf("add new node error: %s", err)
 	}
+	c.nodeAdded = true
 	added, err := c.addAuthorizedUsers(node)
 	if err != nil {
 		return fmt.Errorf("add users error: %s", err)
@@ -92,6 +129,7 @@ func (c *Controller) Start() error {
 	log.WithField("tag", c.tag).Infof("Added %d new users", added)
 	c.info = node
 	c.startTasks(node)
+	started = true
 	return nil
 }
 
@@ -109,27 +147,36 @@ func (c *Controller) addAuthorizedUsers(node *panel.NodeInfo) (int, error) {
 
 // Close implement the Close() function of the service interface
 func (c *Controller) Close() error {
+	tasks := []*task.Task{c.nodeInfoMonitorPeriodic, c.userReportPeriodic, c.renewCertPeriodic,
+		c.dynamicSpeedLimitPeriodic, c.onlineIpReportPeriodic}
+	for _, t := range tasks {
+		if t != nil {
+			t.Close()
+		}
+	}
+	for _, t := range tasks {
+		if t != nil {
+			t.CloseAndWait()
+		}
+	}
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+	if c.closed {
+		return nil
+	}
+	c.closed = true
+	var errs []error
+	if c.nodeAdded {
+		if _, err := c.collectTraffic(); err != nil {
+			errs = append(errs, err)
+		}
+		if err := c.server.DelNode(c.tag); err != nil {
+			errs = append(errs, err)
+		}
+		c.nodeAdded = false
+	}
 	limiter.DeleteLimiter(c.tag)
-	if c.nodeInfoMonitorPeriodic != nil {
-		c.nodeInfoMonitorPeriodic.Close()
-	}
-	if c.userReportPeriodic != nil {
-		c.userReportPeriodic.Close()
-	}
-	if c.renewCertPeriodic != nil {
-		c.renewCertPeriodic.Close()
-	}
-	if c.dynamicSpeedLimitPeriodic != nil {
-		c.dynamicSpeedLimitPeriodic.Close()
-	}
-	if c.onlineIpReportPeriodic != nil {
-		c.onlineIpReportPeriodic.Close()
-	}
-	err := c.server.DelNode(c.tag)
-	if err != nil {
-		return fmt.Errorf("del node error: %s", err)
-	}
-	return nil
+	return errors.Join(errs...)
 }
 
 func (c *Controller) buildNodeTag(node *panel.NodeInfo) string {

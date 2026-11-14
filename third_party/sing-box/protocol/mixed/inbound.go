@@ -3,6 +3,7 @@ package mixed
 import (
 	"context"
 	"net"
+	"sync/atomic"
 	"time"
 
 	"github.com/sagernet/sing-box/adapter"
@@ -30,12 +31,22 @@ func RegisterInbound(registry *inbound.Registry) {
 
 var _ adapter.TCPInjectableInbound = (*Inbound)(nil)
 
+func (h *Inbound) SetUsers(users []auth.User) *auth.Authenticator {
+	authenticator := auth.NewAuthenticator(users)
+	if authenticator == nil {
+		authenticator = &auth.Authenticator{}
+	}
+	h.authenticator.Store(authenticator)
+	h.server.SetAuthenticator(authenticator)
+	return authenticator
+}
+
 type Inbound struct {
 	inbound.Adapter
 	router        adapter.ConnectionRouterEx
 	logger        log.ContextLogger
 	listener      *listener.Listener
-	authenticator *auth.Authenticator
+	authenticator atomic.Pointer[auth.Authenticator]
 	server        *http.Server
 	tlsConfig     tls.ServerConfig
 	udpTimeout    time.Duration
@@ -49,14 +60,18 @@ func NewInbound(ctx context.Context, router adapter.Router, logger log.ContextLo
 		udpTimeout = C.UDPTimeout
 	}
 	inbound := &Inbound{
-		Adapter:       inbound.NewAdapter(C.TypeMixed, tag),
-		router:        uot.NewRouter(router, logger),
-		logger:        logger,
-		authenticator: auth.NewAuthenticator(options.Users),
-		udpTimeout:    udpTimeout,
+		Adapter:    inbound.NewAdapter(C.TypeMixed, tag),
+		router:     uot.NewRouter(router, logger),
+		logger:     logger,
+		udpTimeout: udpTimeout,
 	}
+	authenticator := auth.NewAuthenticator(options.Users)
+	if options.Users != nil && authenticator == nil {
+		authenticator = &auth.Authenticator{}
+	}
+	inbound.authenticator.Store(authenticator)
 	inbound.server = http.NewServer(http.ServerOptions{
-		Authenticator: inbound.authenticator,
+		Authenticator: inbound.authenticator.Load(),
 		Logger:        logger,
 		HTTP1:         true,
 		HTTP2:         true,
@@ -129,7 +144,9 @@ func (h *Inbound) NewConnection(ctx context.Context, conn net.Conn, metadata ada
 	handler := adapter.NewUpstreamHandler(metadata, h.newUserConnection, h.streamUserPacketConnection)
 	switch headerBytes[0] {
 	case socks4.Version, socks5.Version:
-		err = socks.HandleConnectionEx(ctx, conn, reader.Reader, h.authenticator, handler, h.listener, h.udpTimeout, metadata.Source, onClose)
+		authenticator := h.authenticator.Load()
+		ctx = http.ContextWithAuthenticator(ctx, authenticator)
+		err = socks.HandleConnectionEx(ctx, conn, reader.Reader, authenticator, handler, h.listener, h.udpTimeout, metadata.Source, onClose)
 		if err != nil {
 			N.CloseOnHandshakeFailure(conn, onClose, err)
 			if E.IsClosedOrCanceled(err) {
