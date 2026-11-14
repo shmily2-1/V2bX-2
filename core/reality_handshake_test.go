@@ -26,6 +26,7 @@ import (
 	"github.com/shmily2-1/V2bX-2/conf"
 	"github.com/shmily2-1/V2bX-2/core"
 	"github.com/shmily2-1/V2bX-2/limiter"
+	"github.com/xtls/reality"
 )
 
 // REALITY camouflage, proxy target and V2bX servers all bind to loopback.
@@ -77,10 +78,8 @@ func TestRealityHandshakeInteroperability(t *testing.T) {
 						},
 					},
 				}
-				xrayConfig := conf.NewXrayConfig()
-				xrayConfig.LogConfig.Level = "debug"
 				engine, err := core.NewCore([]conf.CoreConfig{{
-					Type: serverCore, SingConfig: conf.NewSingConfig(), XrayConfig: xrayConfig,
+					Type: serverCore, SingConfig: conf.NewSingConfig(), XrayConfig: conf.NewXrayConfig(),
 				}})
 				if err != nil {
 					t.Fatal(err)
@@ -102,8 +101,27 @@ func TestRealityHandshakeInteroperability(t *testing.T) {
 				if _, err := engine.AddUsers(&core.AddUsersParams{Tag: tag, NodeInfo: info, Users: users}); err != nil {
 					t.Fatal(err)
 				}
+				if serverCore == "xray" {
+					// Xray starts asynchronous camouflage probes from ListenTCP.
+					// An authenticated connection arriving before they finish may
+					// wait in five-second increments. Observe readiness rather
+					// than racing it with the connection's five-second deadline.
+					probeKey := net.JoinHostPort("127.0.0.1", strconv.Itoa(targetPort)) + " localhost 2"
+					deadline := time.Now().Add(12 * time.Second)
+					for {
+						value, _ := reality.GlobalPostHandshakeRecordsLens.Load(probeKey)
+						if _, ready := value.([]int); ready {
+							break
+						}
+						if time.Now().After(deadline) {
+							t.Fatal("Xray camouflage probe did not finish")
+						}
+						time.Sleep(10 * time.Millisecond)
+					}
+				}
 				config, err := singTLS.NewRealityClient(context.Background(), nil, "localhost", option.OutboundTLSOptions{
 					Enabled: true, ServerName: "localhost",
+					ALPN: []string{"h2", "http/1.1"},
 					UTLS: &option.OutboundUTLSOptions{Enabled: true, Fingerprint: "chrome"},
 					Reality: &option.OutboundRealityOptions{
 						Enabled: true, PublicKey: base64.RawURLEncoding.EncodeToString(key.PublicKey().Bytes()), ShortID: "1234",
