@@ -9,8 +9,11 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"encoding/base64"
+	"fmt"
 	"io"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"testing"
 	"time"
@@ -28,27 +31,23 @@ import (
 // REALITY camouflage, proxy target and V2bX servers all bind to loopback.
 // No public target, real user, panel or production certificate is used.
 func TestRealityHandshakeInteroperability(t *testing.T) {
-	certPath, keyPath := localCertificate(t)
-	certificate, err := tls.LoadX509KeyPair(certPath, keyPath)
-	if err != nil {
-		t.Fatal(err)
-	}
 	limiter.Init()
 	for _, targetCurve := range []tls.CurveID{tls.X25519MLKEM768, tls.X25519} {
 		for _, serverCore := range []string{"xray", "sing"} {
 			t.Run(serverCore+"-"+strconv.Itoa(int(targetCurve)), func(t *testing.T) {
-				target, err := tls.Listen("tcp", "127.0.0.1:0", &tls.Config{
-					Certificates:     []tls.Certificate{certificate},
+				// Use a real HTTPS target and its normal certificate flight rather
+				// than a TLS echo socket with a minimal synthetic leaf certificate.
+				target := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.WriteHeader(http.StatusNoContent)
+				}))
+				target.TLS = &tls.Config{
 					MinVersion:       tls.VersionTLS13,
 					MaxVersion:       tls.VersionTLS13,
 					CurvePreferences: []tls.CurveID{targetCurve},
 					NextProtos:       []string{"h2", "http/1.1"},
-				})
-				if err != nil {
-					t.Fatal(err)
 				}
-				t.Cleanup(func() { target.Close() })
-				go serveRealityTestEcho(target)
+				target.StartTLS()
+				t.Cleanup(target.Close)
 				echo, err := net.Listen("tcp", "127.0.0.1:0")
 				if err != nil {
 					t.Fatal(err)
@@ -66,7 +65,7 @@ func TestRealityHandshakeInteroperability(t *testing.T) {
 				}
 				port := listener.Addr().(*net.TCPAddr).Port
 				listener.Close()
-				targetPort := target.Addr().(*net.TCPAddr).Port
+				targetPort := target.Listener.Addr().(*net.TCPAddr).Port
 				info := &panel.NodeInfo{
 					Type: "vless", Security: panel.Reality,
 					Common: &panel.CommonNode{ServerPort: port},
@@ -120,7 +119,7 @@ func TestRealityHandshakeInteroperability(t *testing.T) {
 					raw.SetDeadline(time.Now().Add(5 * time.Second))
 					conn, err := singTLS.ClientHandshake(context.Background(), raw, config)
 					if err != nil {
-						return err
+						return fmt.Errorf("REALITY handshake: %w", err)
 					}
 					defer conn.Close()
 					client, err := vlessclient.NewClient(uuid, "", nil)
@@ -138,7 +137,7 @@ func TestRealityHandshakeInteroperability(t *testing.T) {
 					}
 					actual := make([]byte, len(payload))
 					if _, err := io.ReadFull(proxy, actual); err != nil {
-						return err
+						return fmt.Errorf("VLESS echo read: %w", err)
 					}
 					if !bytes.Equal(actual, payload) {
 						return io.ErrUnexpectedEOF
