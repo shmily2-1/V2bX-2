@@ -146,21 +146,11 @@ func (e *RealityClientConfig) ClientHandshake(ctx context.Context, conn net.Conn
 	if err != nil {
 		return nil, err
 	}
-	for _, extension := range uConn.Extensions {
-		if ce, ok := extension.(*utls.SupportedCurvesExtension); ok {
-			ce.Curves = common.Filter(ce.Curves, func(curveID utls.CurveID) bool {
-				return curveID != utls.X25519MLKEM768
-			})
+	if normalizeRealityKeyShares(uConn.Extensions) {
+		err = uConn.BuildHandshakeState()
+		if err != nil {
+			return nil, err
 		}
-		if ks, ok := extension.(*utls.KeyShareExtension); ok {
-			ks.KeyShares = common.Filter(ks.KeyShares, func(share utls.KeyShare) bool {
-				return share.Group != utls.X25519MLKEM768
-			})
-		}
-	}
-	err = uConn.BuildHandshakeState()
-	if err != nil {
-		return nil, err
 	}
 
 	if len(uConfig.NextProtos) > 0 {
@@ -240,6 +230,39 @@ func (e *RealityClientConfig) ClientHandshake(ctx context.Context, conn net.Conn
 	}
 
 	return &realityClientConnWrapper{uConn}, nil
+}
+
+// Keep a fingerprint's native hybrid key exchange when both extensions agree.
+// Incomplete randomized fingerprints can otherwise cause a HelloRetryRequest
+// or an illegal_parameter alert. Do not synthesize keys or replace fingerprints.
+func normalizeRealityKeyShares(extensions []utls.TLSExtension) bool {
+	var hasGroup, hasShare bool
+	for _, extension := range extensions {
+		switch ext := extension.(type) {
+		case *utls.SupportedCurvesExtension:
+			hasGroup = common.Contains(ext.Curves, utls.X25519MLKEM768)
+		case *utls.KeyShareExtension:
+			hasShare = common.Any(ext.KeyShares, func(share utls.KeyShare) bool {
+				return share.Group == utls.X25519MLKEM768
+			})
+		}
+	}
+	if hasGroup == hasShare {
+		return false
+	}
+	for _, extension := range extensions {
+		switch ext := extension.(type) {
+		case *utls.SupportedCurvesExtension:
+			ext.Curves = common.Filter(ext.Curves, func(curve utls.CurveID) bool {
+				return curve != utls.X25519MLKEM768
+			})
+		case *utls.KeyShareExtension:
+			ext.KeyShares = common.Filter(ext.KeyShares, func(share utls.KeyShare) bool {
+				return share.Group != utls.X25519MLKEM768
+			})
+		}
+	}
+	return true
 }
 
 func realityClientFallback(ctx context.Context, uConn net.Conn, serverName string, fingerprint utls.ClientHelloID) {

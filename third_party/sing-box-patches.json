@@ -45,6 +45,14 @@
       "upstream_sha256": null,
       "patched_sha256": "baf24104c810702527057b7d89a277dc5f916d3fc6db83902403de0912e40d65"
     },
+    "common/tls/reality_client.go": {
+      "upstream_sha256": "38a5d553fffd108afca51bde0b0888512d2f4633daa608e03767838b8fdcdbc0",
+      "patched_sha256": "284f432b29cf07b807fd231bbca48daac6f038eea837b0d525c96efcf6304f31"
+    },
+    "common/tls/reality_keyshare_test.go": {
+      "upstream_sha256": null,
+      "patched_sha256": "9e9cf006ef4b3f301c88d62d9db566a6f0ee559140e84d48ffcf7dc08dd0694e"
+    },
     "experimental/libbox/ffi.json": {
       "upstream_sha256": null,
       "patched_sha256": "370410728204e3aa2a3b8fca34ef80b0b14aaab6936eac984df44c6c99cf7ec5"

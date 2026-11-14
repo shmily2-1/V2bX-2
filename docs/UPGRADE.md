@@ -14,6 +14,8 @@
 
 ## 2. 必须注意的兼容变化
 
+REALITY：内嵌 sing-box 客户端保留完整的 X25519MLKEM768 group/share，并清理不完整配对，以兼容新版 Xray 的 ClientHello 检查。该修复作用于本程序的出站，不能替外部手机/路由器客户端更新内核；HY2 不使用该握手。证据、边界和回归测试见 [REALITY 握手排查](REALITY-HANDSHAKE.md)。
+
 新增：Hysteria2 端口跳跃同时覆盖独立和 sing 内核。仅明确下发 `ports` 才创建 Linux NAT 规则；正常删除/重载/退出清理。Xboard 配套补丁、固定监听端口与公网范围的区别、权限和故障处理见 `HYSTERIA2-PORT-HOPPING.md`。该功能未修改任何线上服务器。
 
 1. **Reality Xver**：sing-box 官方没有旧 fork 的该字段；非零值明确报错，需改用 `xray`，不静默丢弃。

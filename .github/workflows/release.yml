@@ -43,6 +43,8 @@ jobs:
           go-version-file: go.mod
       - run: go mod verify
       - run: go test -tags "$BUILD_TAGS" -count=1 -timeout 180s ./...
+      - name: Check embedded REALITY ClientHello compatibility
+        run: go test -tags "$BUILD_TAGS" -count=1 -timeout 60s -run '^TestReality' github.com/sagernet/sing-box/common/tls
       - name: Check compatibility patch reproducibility
         run: python3 scripts/check-sing-patches.py
 
