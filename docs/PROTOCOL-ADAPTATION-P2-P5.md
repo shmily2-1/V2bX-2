@@ -1,6 +1,6 @@
 # P2–P5 协议与本地服务适配
 
-本次扩展保留现有面板节点，通过可选的本地服务配置管理 Tunnel、TUN、WireGuard、AmneziaWG 和 MTProto。没有修改 Xboard/V2board 的数据库、后台表单或订阅服务。
+本次扩展保留现有面板节点，通过可选的本地服务配置管理 Tunnel、TUN、WireGuard、AmneziaWG 和 MTProto。本说明描述节点端能力；Xboard 数据库、后台表单、服务同步和订阅适配在独立面板项目交付，需要另外部署。
 
 ## 能力与边界
 
@@ -21,7 +21,7 @@ Xray 继续使用 `v1.260327.1-0.20261109052709-676eaf66f8f0`。`go.mod`、`go.s
 
 - 未取得实际远端存储账号，因此 XDRIVE 的远程云存储互通未验收。local 只证明共享文件通道工作，不能用来证明两台机器自动共享本地目录。
 - MASQUE 的外层设备来源没有进入固定 Xray 的用户分流接口，`DeviceLimit` 会被拒绝，避免将隧道地址数冒充真实设备数。连接数限制不是完整的隧道会话配额。IPv6 数据转发、ICMP 和长期并发没有作为本轮已通过项。
-- WireGuard/AmneziaWG 的 Peer UID 是本地服务归属；本次没有把它们伪装成 UniProxy 面板用户，也没有新增面板计费接口。
+- WireGuard/AmneziaWG 的 Peer UID 是本地服务归属，不通过 UniProxy 节点用户接口管理。配套 Xboard 使用独立服务同步、应用确认和流量批次接口，原版面板不会自动获得这些能力。
 - MTProto 当前提供每实例总量。真实 FakeTLS 认证已验证，Telegram DC 的公网连接、收发消息和生产环境吞吐未验证。
 - 系统网卡和外部后端在 Linux 隔离环境验收；其它系统的 TUN 驱动与外部后端发行包没有据此宣称可用。AmneziaWG 适配器明确要求 Linux。
 

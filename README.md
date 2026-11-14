@@ -21,8 +21,8 @@
 
 | 核心 Type | 协议 |
 |---|---|
-| `xray` | VMess、VLESS（含 XDRIVE 传输）、Trojan、Shadowsocks |
-| `sing` | VMess、VLESS、Trojan、Shadowsocks、TUIC、AnyTLS、Hysteria 1、Hysteria 2、HTTP、Mixed、MASQUE |
+| `xray` | VMess、VLESS（含 XDRIVE 传输）、Trojan、Shadowsocks、MASQUE |
+| `sing` | VMess、VLESS、Trojan、Shadowsocks、TUIC、AnyTLS、Hysteria 1、Hysteria 2、HTTP、Mixed |
 | `hysteria2` | 独立官方 Hysteria 2 |
 
 Hysteria 1、TUIC、AnyTLS、VMess/VLESS、Shadowsocks 不全是独立可执行“内核”，它们随所选主内核及协议库更新。面板仍使用上游 V2board/Xboard 兼容 API；本次没有修改线上面板或替任何节点生成用户。
