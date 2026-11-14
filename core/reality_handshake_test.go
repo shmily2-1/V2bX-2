@@ -119,7 +119,7 @@ func TestRealityHandshakeInteroperability(t *testing.T) {
 					}
 					defer raw.Close()
 					raw.SetDeadline(time.Now().Add(5 * time.Second))
-					conn, err := config.(*singTLS.RealityClientConfig).ClientHandshake(context.Background(), raw)
+					conn, err := singTLS.ClientHandshake(context.Background(), raw, config)
 					if err != nil {
 						return fmt.Errorf("REALITY handshake: %w", err)
 					}
@@ -128,7 +128,9 @@ func TestRealityHandshakeInteroperability(t *testing.T) {
 					if err != nil {
 						return err
 					}
-					proxy, err := client.DialConn(conn, M.ParseSocksaddr(echo.Addr().String()))
+					// Match protocol/vless.Outbound: send the request header with
+					// the first payload instead of an empty initial TLS record.
+					proxy, err := client.DialEarlyConn(conn, M.ParseSocksaddr(echo.Addr().String()))
 					if err != nil {
 						return err
 					}
