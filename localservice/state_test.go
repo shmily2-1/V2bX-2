@@ -26,6 +26,59 @@ func testKey(t *testing.T) string {
 	}
 	return base64.StdEncoding.EncodeToString(k.PublicKey().Bytes())
 }
+
+type startupInstance struct{}
+
+func (*startupInstance) Close() error                { return nil }
+func (*startupInstance) Health() error               { return nil }
+func (*startupInstance) Traffic() ([]Traffic, error) { return nil, nil }
+
+func TestStartupUsesOneServiceSnapshot(t *testing.T) {
+	c := &conf.Conf{LocalServiceDir: t.TempDir()}
+	first := conf.LocalService{ID: "first", Type: "tunnel", Enabled: true, Listen: "127.0.0.1:12411", Target: "127.0.0.1:12412", Network: "tcp"}
+	second := first
+	second.ID, second.Listen = "second", "127.0.0.1:12413"
+	if err := WriteJSON(filepath.Join(c.LocalServiceDir, "first.json"), first); err != nil {
+		t.Fatal(err)
+	}
+	previous, existed := factories["tunnel"]
+	t.Cleanup(func() {
+		if existed {
+			factories["tunnel"] = previous
+		} else {
+			delete(factories, "tunnel")
+		}
+	})
+	Register("tunnel", func(s conf.LocalService, _ string) (Instance, error) {
+		// A CLI write can land while the first startup snapshot is applied.
+		if s.ID == "first" {
+			if err := WriteJSON(filepath.Join(c.LocalServiceDir, "second.json"), second); err != nil {
+				return nil, err
+			}
+		}
+		return &startupInstance{}, nil
+	})
+	m := New(c)
+	if err := m.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = m.Close() })
+	m.mu.Lock()
+	firstApplied := m.active["first"] != nil
+	m.mu.Unlock()
+	if !firstApplied {
+		t.Fatal("startup snapshot was not applied")
+	}
+	if err := m.Reconcile(); err != nil {
+		t.Fatal(err)
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.active["second"] == nil {
+		t.Fatal("concurrent addition was not picked up by reconciliation")
+	}
+}
+
 func TestStablePeerAllocation(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "addresses.json")

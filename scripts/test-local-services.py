@@ -96,6 +96,9 @@ def main():
     def until(predicate, description):
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline:
+            if current.poll() is not None:
+                raise AssertionError(description + ': server exited; ' +
+                                     (root / f'server-{processes.index(current)}.log').read_text(errors='replace')[-4000:])
             if predicate():
                 return
             time.sleep(.1)

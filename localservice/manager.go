@@ -84,11 +84,17 @@ func (m *Manager) Start() (result error) {
 	if m.status == nil {
 		m.status = map[string]*Status{}
 	}
-	if err = m.Reconcile(); err != nil {
+	specs, err := LoadSpecs(m.config)
+	if err != nil {
+		return err
+	}
+	m.mu.Lock()
+	err = m.reconcile(specs)
+	m.mu.Unlock()
+	if err != nil {
 		_ = m.closeInstances()
 		return err
 	}
-	specs, _ := LoadSpecs(m.config)
 	for _, s := range specs {
 		if s.Enabled && m.active[s.ID] == nil {
 			st := m.status[s.ID]
@@ -147,6 +153,13 @@ func (m *Manager) Reconcile() error {
 	if err != nil {
 		return err
 	}
+	return m.reconcile(specs)
+}
+
+// Startup applies and checks the same snapshot; concurrent CLI edits are
+// picked up on the next reconciliation rather than inspected before applying.
+func (m *Manager) reconcile(specs []conf.LocalService) error {
+	var err error
 	wanted := map[string]bool{}
 	for _, raw := range specs {
 		wanted[raw.ID] = true
