@@ -1,3 +1,20 @@
+# v0.1.0-core-upgrade.15：REALITY 客户端握手兼容修复
+
+内嵌 sing-box 不再无条件删除完整的 X25519MLKEM768 曲线和 key share；不完整配对仍会清理，保留原有独立 X25519 认证密钥。修复作用于 V2bX 内的 REALITY 出站，不会替外部手机/路由器客户端更新内核。
+
+- 不降级 Xray，不修改服务端 ClientHello 检查、UUID 认证或版本限制，不关闭证书验证。
+- 增加 ClientHello 与 Xray/sing 回环代理测试，覆盖经典/PQ 目标及错误 UUID 拒绝；原 HY2 回归继续保留。
+- 记录补丁哈希，CI 校验内嵌源码与官方模块的差异。
+- 使用回环地址和临时测试证书验证，没有部署服务器、请求公网 CA 或修改生产面板。
+
+详细证据、客户端限制与排查方法见 [REALITY-HANDSHAKE.md](REALITY-HANDSHAKE.md)。
+
+~~~bash
+wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/main/install.sh && bash install.sh
+~~~
+
+---
+
 # v0.1.0-core-upgrade.14：节点管理菜单
 
 新增菜单18“新增节点”、菜单19“节点管理”和菜单20“移除节点”。新增和修改节点会真实校验面板、证书并重新部署；移除节点会保留剩余节点并重新部署，证书文件保留。
