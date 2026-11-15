@@ -1,3 +1,11 @@
+# v0.1.0-core-upgrade.21：停用本地服务运行时
+
+- 停用 Tunnel、TUN、WireGuard、AmneziaWG、MTProto 本地服务运行时。
+- 保留历史服务配置文件，不再由 `server` 进程加载。
+- 一键安装器、管理器和发布文档统一更新到 `.21`。
+
+---
+
 # v0.1.0-core-upgrade.20：接通 Xray Hysteria2 入站适配
 
 本版本将锁定的 Xray Hysteria2 内核能力接入 V2bX，并同步一键安装脚本。安装器默认固定到本预发布版本，确保下载的二进制、管理组件和脚本来自同一个 Release。
