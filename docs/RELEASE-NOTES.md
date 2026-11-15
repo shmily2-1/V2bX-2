@@ -1,3 +1,16 @@
+# v0.1.0-core-upgrade.20：接通 Xray Hysteria2 入站适配
+
+本版本将锁定的 Xray Hysteria2 内核能力接入 V2bX，并同步一键安装脚本。安装器默认固定到本预发布版本，确保下载的二进制、管理组件和脚本来自同一个 Release。
+
+- Xray Core 新增 Hysteria2 入站注册、用户认证和动态用户管理。
+- 接入 Salamander、Gecko experimental、Gecko 分片范围、UDP idle timeout、QUIC Path MTU 和 Masquerade 配置。
+- Xboard 原节点管理页面可选择 V2bX 后端并保存 Hysteria2 配置。
+- 一键安装、管理器和安装文档统一更新到 `v0.1.0-core-upgrade.20`。
+
+当前版本仍需在目标环境使用实际证书、端口和客户端完成公网 HY2 互通验收；不自动重启已有节点或覆盖现有配置。
+
+---
+
 # v0.1.0-core-upgrade.19：补全 VLESS 与 Hysteria2 高级参数
 
 本版本补全原版 Xboard 适配所需的 VLESS Encryption/MLDSA65 字段，以及 Hysteria2 Gecko、UDP Mask、QUIC 和 Masquerade 配置，并更新一键安装脚本。
