@@ -153,14 +153,22 @@ type HysteriaNode struct {
 
 type Hysteria2Node struct {
 	CommonNode
-	Version                 int    `json:"version"`
-	Ports                   string `json:"ports"`
-	HopInterval             int    `json:"hop_interval"` // Client-side seconds; the server does not hop.
-	Ignore_Client_Bandwidth bool   `json:"ignore_client_bandwidth"`
-	UpMbps                  int    `json:"up_mbps"`
-	DownMbps                int    `json:"down_mbps"`
-	ObfsType                string `json:"obfs"`
-	ObfsPassword            string `json:"obfs-password"`
+	Version                 int             `json:"version"`
+	Ports                   string          `json:"ports"`
+	HopInterval             int             `json:"hop_interval"` // Client-side seconds; the server does not hop.
+	Ignore_Client_Bandwidth bool            `json:"ignore_client_bandwidth"`
+	UpMbps                  int             `json:"up_mbps"`
+	DownMbps                int             `json:"down_mbps"`
+	ObfsType                string          `json:"obfs"`
+	ObfsPassword            string          `json:"obfs-password"`
+	ObfsMode                string          `json:"obfs-mode"`
+	ObfsMinPacketSize       int             `json:"obfs-min-packet-size"`
+	ObfsMaxPacketSize       int             `json:"obfs-max-packet-size"`
+	QUIC                    json.RawMessage `json:"quic"`
+	QUICInitialPacketSize   int             `json:"quic_initial_packet_size"`
+	QUICDisablePathMTU      bool            `json:"quic_disable_path_mtu_discovery"`
+	UDPIDLETimeout          int             `json:"udp_idle_timeout"`
+	Masquerade              json.RawMessage `json:"masquerade"`
 }
 
 type RawDNS struct {

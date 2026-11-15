@@ -103,3 +103,23 @@ func TestNodeInfoTransportFailure(t *testing.T) {
 		t.Fatal("expected transport error, not panic")
 	}
 }
+
+func TestXboardHysteria2GeckoFields(t *testing.T) {
+	body := `{"protocol":"hysteria","server_port":8443,"server_name":"localhost","version":2,"obfs":"gecko","obfs-mode":"gecko","obfs-password":"pw","obfs-min-packet-size":512,"obfs-max-packet-size":1200,"quic_initial_packet_size":1200,"masquerade":{"type":"string"}}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(body)) }))
+	defer srv.Close()
+	c, err := New(&conf.ApiConfig{APIHost: srv.URL, Key: "local-test", NodeType: "hysteria", NodeID: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	node, err := c.GetNodeInfo()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if node.Hysteria2.ObfsMode != "gecko" || node.Hysteria2.ObfsMinPacketSize != 512 || node.Hysteria2.ObfsMaxPacketSize != 1200 {
+		t.Fatalf("gecko fields not decoded: %+v", node.Hysteria2)
+	}
+	if node.Hysteria2.QUICInitialPacketSize != 1200 || len(node.Hysteria2.Masquerade) == 0 {
+		t.Fatal("missing QUIC or masquerade fields")
+	}
+}

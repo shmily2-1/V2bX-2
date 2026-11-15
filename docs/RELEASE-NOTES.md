@@ -1,3 +1,14 @@
+# v0.1.0-core-upgrade.19：补全 VLESS 与 Hysteria2 高级参数
+
+本版本补全原版 Xboard 适配所需的 VLESS Encryption/MLDSA65 字段，以及 Hysteria2 Gecko、UDP Mask、QUIC 和 Masquerade 配置，并更新一键安装脚本。
+
+- VLESS 表单增加协议加密模式、票据、填充、服务端私钥/Seed、MLDSA65 Seed 和 Verify，并提供自动生成 X25519 私钥按钮。
+- Hysteria2 表单增加 Salamander/Gecko experimental、伪装密码、Packet Min/Max、QUIC 初始包和 Path MTU、UDP 空闲超时、Masquerade 配置。
+- 节点 API、Sing Hysteria2 入站和原版 Xboard 配置校验同步扩展；不支持的字段不会静默丢弃。
+- 一键安装默认固定到本版本，Xboard 原机器详情中的 V2bX 安装命令同步更新。
+
+---
+
 # v0.1.0-core-upgrade.18：接回 Xboard 原生管理流程
 
 本版本为配套原版 Xboard 界面适配的预发布版，保留 `.17` 的内核、协议和依赖版本。

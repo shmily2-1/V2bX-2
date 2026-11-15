@@ -422,10 +422,18 @@ func getInboundOptions(tag string, info *panel.NodeInfo, c *conf.Options) (optio
 	case "hysteria2":
 		in.Type = "hysteria2"
 		var obfs *option.Hysteria2Obfs
-		if info.Hysteria2.ObfsType != "" && info.Hysteria2.ObfsPassword != "" {
+		obfsType := info.Hysteria2.ObfsMode
+		if obfsType == "" {
+			obfsType = info.Hysteria2.ObfsType
+		}
+		if obfsType != "" && info.Hysteria2.ObfsPassword != "" {
 			obfs = &option.Hysteria2Obfs{
-				Type:     info.Hysteria2.ObfsType,
+				Type:     obfsType,
 				Password: info.Hysteria2.ObfsPassword,
+			}
+			if obfsType == "gecko" {
+				obfs.GeckoOptions.MinPacketSize = info.Hysteria2.ObfsMinPacketSize
+				obfs.GeckoOptions.MaxPacketSize = info.Hysteria2.ObfsMaxPacketSize
 			}
 		} else if info.Hysteria2.ObfsType != "" {
 			obfs = &option.Hysteria2Obfs{
@@ -434,6 +442,13 @@ func getInboundOptions(tag string, info *panel.NodeInfo, c *conf.Options) (optio
 			}
 		}
 		var masquerade *option.Hysteria2Masquerade
+		if len(info.Hysteria2.Masquerade) > 0 && string(info.Hysteria2.Masquerade) != "null" {
+			var configured option.Hysteria2Masquerade
+			if err := json.Unmarshal(info.Hysteria2.Masquerade, &configured); err != nil {
+				return option.Inbound{}, fmt.Errorf("invalid Hysteria2 masquerade: %w", err)
+			}
+			masquerade = &configured
+		}
 		if masqueradeURL := strings.TrimSpace(c.SingOptions.Hysteria2MasqueradeURL); masqueradeURL != "" {
 			parsed, err := url.Parse(masqueradeURL)
 			if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" || parsed.User != nil || parsed.Fragment != "" {
@@ -457,6 +472,7 @@ func getInboundOptions(tag string, info *panel.NodeInfo, c *conf.Options) (optio
 			IgnoreClientBandwidth: info.Hysteria2.Ignore_Client_Bandwidth,
 			Obfs:                  obfs,
 			Masquerade:            masquerade,
+			QUICOptions:           option.QUICOptions{InitialPacketSize: info.Hysteria2.QUICInitialPacketSize, DisablePathMTUDiscovery: info.Hysteria2.QUICDisablePathMTU},
 			InboundTLSOptionsContainer: option.InboundTLSOptionsContainer{
 				TLS: &tls,
 			},
