@@ -2,7 +2,7 @@
 # Original-style V2bX management menu, adapted from wyx2685/V2bX-script (MPL-2.0).
 # Installed as /usr/bin/V2bX and /usr/local/bin/v2bx. No upstream downloads.
 set -euo pipefail
-script_ref=v0.1.0-core-upgrade.21
+script_ref=v0.1.0-core-upgrade.22
 root=
 if [[ ${1:-} == --root ]]; then
   [[ $# -ge 3 && $2 =~ ^/[a-zA-Z0-9_./-]+$ ]] || { echo 'Invalid --root' >&2; exit 2; }
@@ -255,8 +255,6 @@ V2bX-2 管理命令（兼容原项目，v2bx 始终指向菜单）：
   v2bx node-add              新增一个节点并部署
   v2bx node-manage           查看或修改节点
   v2bx node-remove           移除一个节点并部署剩余节点
-  v2bx services ...          本地服务、Peer、状态和客户端配置管理
-  v2bx panel-agent ...       使用原 Xboard 机器接口同步服务、状态与计量
   v2bx export-node ...       导出 HTTP/Mixed、XDRIVE、MASQUE 客户端配置
   v2bx generate --offline    仅生成配置，不连接面板或启动服务
   v2bx generate --advanced   完整协议/证书/多节点配置向导
@@ -288,10 +286,6 @@ dispatch() {
     bbr|open-ports) root_only; host_only; python3 "$state/system-tools.py" "$command" ;;
     log) host_only; journalctl -u V2bX.service -e --no-pager -f ;;
     version|x25519) find_binary; "$binary" "$command" "$@" ;;
-    services) find_binary; "$binary" services --config "$config" "$@" ;;
-    panel-agent)
-      [[ -f $state/xboard-service-agent.py ]] || { fail '缺少面板同步组件，请更新到 .18 或更高版本'; return 1; }
-      python3 "$state/xboard-service-agent.py" "$@" ;;
     export-node) find_binary; "$binary" export-node --config "$config" "$@" ;;
     ports) ports_help ;;
     help|-h|--help) help_text ;;

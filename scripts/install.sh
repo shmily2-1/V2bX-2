@@ -5,7 +5,7 @@ umask 022
 
 repo=shmily2-1/V2bX-2
 # Pin an acceptance release; GitHub /latest excludes prereleases.
-version=v0.1.0-core-upgrade.21
+version=v0.1.0-core-upgrade.22
 install_dir=
 destdir=
 with_systemd=0
@@ -27,7 +27,7 @@ Usage: bash install.sh [v<release-version>] [options]
   --destdir DIR        Stage into an isolated root, without root or host service changes
                       (packaging/tests only; incompatible with --install-deps)
   -h, --help           Show this help
-Default release: v0.1.0-core-upgrade.21 (prerelease / acceptance testing)
+Default release: v0.1.0-core-upgrade.22 (prerelease / acceptance testing)
 Never changes existing configuration, enables services, or starts/restarts nodes.
 USAGE
 }
@@ -179,7 +179,7 @@ if ((with_manager)); then
   manager_alias="$(resolve /usr/local/bin)/v2bx"
   [[ $target != "$manager_entry" ]] || die 'Service uses /usr/bin/V2bX as a binary; migrate it before installing the menu.'
   # Reject symlinked state files, unknown command collisions and escaped parents.
-  for name in "${manager_files[@]}" xboard-service-agent.py binary-path .install.lock; do
+  for name in "${manager_files[@]}" binary-path .install.lock; do
     [[ ! -L $manager_state/$name ]] || die "Symlinked management state: $name"
     [[ ! -e $manager_state/$name || -f $manager_state/$name ]] || die "Invalid management state: $name"
   done
@@ -241,14 +241,6 @@ if ((with_manager)); then
   done
 fi
 if ((with_manager)); then
-  # Older verified releases lack this optional component; explicit rollback
-  # remains possible with their original management bundle.
-  if unzip -p "$tmp/$asset" management/xboard-service-agent.py > "$tmp/manager-xboard-service-agent.py" 2>/dev/null; then
-    manager_files+=(xboard-service-agent.py)
-    python3 -c 'import ast,sys; ast.parse(open(sys.argv[1], encoding="utf-8").read())' "$tmp/manager-xboard-service-agent.py"
-  else
-    rm -f -- "$tmp/manager-xboard-service-agent.py"
-  fi
   for name in "${manager_files[@]}"; do
     unzip -p "$tmp/$asset" "management/$name" > "$tmp/manager-$name" || die 'Release lacks the adapted management bundle; use a supported release.'
     [[ -s $tmp/manager-$name ]] || die "Empty management file $name"

@@ -77,7 +77,6 @@ sys.stdout.buffer.write(zipfile.ZipFile(archive).read(member))
                 bundle.writestr('management/' + name, (ROOT / name).read_bytes())
             bundle.writestr('management/install.sh', HELPER.read_bytes())
             bundle.writestr('management/bootstrap.sh', BOOTSTRAP.read_bytes())
-            bundle.writestr('management/xboard-service-agent.py', (ROOT / 'scripts/xboard-service-agent.py').read_bytes())
         digest = hashlib.sha256(archive.read_bytes()).hexdigest()
         (self.assets / 'V2bX-linux-amd64.zip.sha256').write_text(
             f'{digest}  V2bX-linux-amd64.zip\n', encoding='utf-8')
@@ -124,11 +123,10 @@ sys.stdout.buffer.write(zipfile.ZipFile(archive).read(member))
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertIn('不关闭防火墙', result.stdout)
 
-    def test_panel_agent_is_installed_from_verified_bundle(self):
+    def test_panel_agent_is_not_installed(self):
         self.run_bootstrap()
-        self.assertEqual((self.root / 'usr/local/lib/V2bX-2/xboard-service-agent.py').read_bytes(),
-                         (ROOT / 'scripts/xboard-service-agent.py').read_bytes())
-        self.assertIn('--config', self.run_menu('panel-agent', '--help'))
+        self.assertFalse((self.root / 'usr/local/lib/V2bX-2/xboard-service-agent.py').exists())
+        self.assertNotEqual(self.run_menu('panel-agent', '--help', ok=False), '')
 
     def test_update_preserves_config_and_service(self):
         self.run_bootstrap()

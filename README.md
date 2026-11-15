@@ -55,7 +55,7 @@ go build -trimpath -tags "$TAGS" -ldflags '-s -w' -o V2bX .
 
 ### Linux 一键安装（兼容原 V2bX 命令）
 
-支持 **amd64 / arm64**，目标是常见 Debian / Ubuntu / RHEL 系 **systemd** 服务器；一键入口不会在 OpenRC、SysVinit、runit 或未运行 systemd 的容器中继续安装。先备份现有配置并阅读 [升级说明](docs/UPGRADE.md)。当前固定安装 `v0.1.0-core-upgrade.21` **验收版 / prerelease**，内核按锁定版本构建。内嵌 sing-box 的 REALITY 出站兼容修复及外部客户端限制见 [握手排查说明](docs/REALITY-HANDSHAKE.md)。
+支持 **amd64 / arm64**，目标是常见 Debian / Ubuntu / RHEL 系 **systemd** 服务器；一键入口不会在 OpenRC、SysVinit、runit 或未运行 systemd 的容器中继续安装。先备份现有配置并阅读 [升级说明](docs/UPGRADE.md)。当前固定安装 `v0.1.0-core-upgrade.22` **验收版 / prerelease**，内核按锁定版本构建。内嵌 sing-box 的 REALITY 出站兼容修复及外部客户端限制见 [握手排查说明](docs/REALITY-HANDSHAKE.md)。
 
 与原项目命令格式一致：
 
@@ -68,7 +68,7 @@ wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/main/install.sh && ba
 生产环境建议固定已验收标签，避免 `main` 变化：
 
 ```bash
-wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/v0.1.0-core-upgrade.21/install.sh && bash install.sh
+wget -N https://raw.githubusercontent.com/shmily2-1/V2bX-2/v0.1.0-core-upgrade.22/install.sh && bash install.sh
 ```
 
 - 从本仓库 Release 下载对应架构，校验 SHA256，原子替换程序并备份旧文件。下载/校验失败不会安装。
@@ -92,7 +92,7 @@ P0/P1 的基础修复、TLS/ECH、REALITY 与传输配置补全，以及实际�
 
 HTTP/Mixed、XDRIVE、MASQUE 及 Xray/sing-box 节点配置见 [P2–P5 说明](docs/PROTOCOL-ADAPTATION-P2-P5.md)。
 
-配套 Xboard 已将管理操作接回原节点表单、服务器详情和用户订阅卡片。机器服务同步与一键组件安装见 [Xboard 原生适配](docs/XBOARD-NATIVE.md)。
+配套 Xboard 已将节点适配接回原节点表单。用户界面保持原订阅流程；机器服务同步已停用。
 
 下面的命令针对源码仓库 checkout；Release ZIP 只包含运行所需的资料和管理 bundle，不保证包含完整测试脚本目录。
 
