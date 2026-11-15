@@ -444,7 +444,11 @@ func getInboundOptions(tag string, info *panel.NodeInfo, c *conf.Options) (optio
 		var masquerade *option.Hysteria2Masquerade
 		if len(info.Hysteria2.Masquerade) > 0 && string(info.Hysteria2.Masquerade) != "null" {
 			var configured option.Hysteria2Masquerade
-			if err := json.Unmarshal(info.Hysteria2.Masquerade, &configured); err != nil {
+			normalized, normalizeErr := normalizeHysteriaMasquerade(info.Hysteria2.Masquerade)
+			if normalizeErr != nil {
+				return option.Inbound{}, normalizeErr
+			}
+			if err := json.Unmarshal(normalized, &configured); err != nil {
 				return option.Inbound{}, fmt.Errorf("invalid Hysteria2 masquerade: %w", err)
 			}
 			masquerade = &configured
@@ -479,6 +483,39 @@ func getInboundOptions(tag string, info *panel.NodeInfo, c *conf.Options) (optio
 		}
 	}
 	return in, nil
+}
+
+func normalizeHysteriaMasquerade(raw json.RawMessage) (json.RawMessage, error) {
+	var value map[string]any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return nil, fmt.Errorf("invalid Hysteria2 masquerade: %w", err)
+	}
+	typ, _ := value["type"].(string)
+	switch typ {
+	case "proxy":
+		url, _ := value["url"].(string)
+		rewrite, _ := value["rewriteHost"].(bool)
+		if !rewrite {
+			rewrite, _ = value["rewrite_host"].(bool)
+		}
+		return json.Marshal(map[string]any{"type": "proxy", "url": url, "rewrite_host": rewrite})
+	case "file":
+		directory, _ := value["directory"].(string)
+		if directory == "" {
+			directory, _ = value["dir"].(string)
+		}
+		return json.Marshal(map[string]any{"type": "file", "directory": directory})
+	case "string":
+		content, _ := value["content"].(string)
+		status := value["statusCode"]
+		if status == nil {
+			status = value["status_code"]
+		}
+		headers := value["headers"]
+		return json.Marshal(map[string]any{"type": "string", "content": content, "status_code": status, "headers": headers})
+	default:
+		return raw, nil
+	}
 }
 
 func (b *Sing) AddNode(tag string, info *panel.NodeInfo, config *conf.Options) error {

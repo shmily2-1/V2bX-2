@@ -1,6 +1,7 @@
 package sing
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/sagernet/sing-box/option"
@@ -49,4 +50,22 @@ func TestHysteria2MasqueradeURL(t *testing.T) {
 			t.Fatal("expected unsupported masquerade scheme to fail")
 		}
 	})
+}
+
+func TestHysteria2MasqueradeCommonCamelCase(t *testing.T) {
+	info := &panel.NodeInfo{
+		Type:      "hysteria2",
+		Security:  panel.Tls,
+		Common:    &panel.CommonNode{ServerPort: 443},
+		Hysteria2: &panel.Hysteria2Node{Masquerade: json.RawMessage(`{"type":"string","statusCode":200,"content":"ok","headers":{"content-type":"text/plain"}}`)},
+	}
+	config := &conf.Options{Core: "sing", ListenIP: "0.0.0.0", SingOptions: conf.NewSingOptions(), CertConfig: &conf.CertConfig{CertMode: "file", CertFile: "/tmp/fullchain.pem", KeyFile: "/tmp/privkey.pem"}}
+	inbound, err := getInboundOptions("test", info, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	options, ok := inbound.Options.(*option.Hysteria2InboundOptions)
+	if !ok || options.Masquerade == nil || options.Masquerade.StringOptions.Content != "ok" || options.Masquerade.StringOptions.StatusCode != 200 {
+		t.Fatalf("common masquerade was not normalized: %#v", inbound.Options)
+	}
 }
