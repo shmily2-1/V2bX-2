@@ -57,8 +57,11 @@ func buildInbound(option *conf.Options, nodeInfo *panel.NodeInfo, tag string) (*
 	case "shadowsocks":
 		err = buildShadowsocks(option, nodeInfo, in)
 		network = "tcp"
+	case "hysteria2":
+		err = buildHysteria2(option, nodeInfo, in)
+		network = "hysteria"
 	default:
-		return nil, fmt.Errorf("unsupported node type: %s, Only support: V2ray, Trojan, Shadowsocks", nodeInfo.Type)
+		return nil, fmt.Errorf("unsupported node type: %s, Only support: V2ray, Trojan, Shadowsocks, Hysteria2", nodeInfo.Type)
 	}
 	if err != nil {
 		return nil, err
@@ -318,6 +321,8 @@ func buildStream(network string, settings json.RawMessage) (*coreConf.StreamConf
 		target = &stream.KCPSettings
 	case "xdrive":
 		target = &stream.XDRIVESettings
+	case "hysteria":
+		target = &stream.HysteriaSettings
 	default:
 		return nil, fmt.Errorf("xray transport %q is not adapted", network)
 	}
@@ -344,6 +349,75 @@ func buildStream(network string, settings json.RawMessage) (*coreConf.StreamConf
 		}
 	}
 	return stream, nil
+}
+
+func buildHysteria2(_ *conf.Options, nodeInfo *panel.NodeInfo, inbound *coreConf.InboundDetourConfig) error {
+	h := nodeInfo.Hysteria2
+	if h == nil {
+		return fmt.Errorf("missing hysteria2 parameters")
+	}
+	settings := &coreConf.HysteriaServerConfig{Version: 2}
+	raw, err := json.Marshal(settings)
+	if err != nil {
+		return fmt.Errorf("marshal hysteria2 config: %w", err)
+	}
+	inbound.Protocol = "hysteria"
+	inbound.Settings = (*json.RawMessage)(&raw)
+
+	hysteriaSettings := &coreConf.HysteriaConfig{Version: 2, UdpIdleTimeout: int64(h.UDPIDLETimeout)}
+	if len(h.Masquerade) > 0 && string(h.Masquerade) != "null" {
+		if err := json.Unmarshal(h.Masquerade, &hysteriaSettings.Masquerade); err != nil {
+			return fmt.Errorf("decode hysteria2 masquerade: %w", err)
+		}
+	}
+	stream := &coreConf.StreamConfig{
+		Network:          ptrTransport("hysteria"),
+		HysteriaSettings: hysteriaSettings,
+	}
+
+	mode := strings.ToLower(strings.TrimSpace(h.ObfsMode))
+	if mode == "" {
+		mode = strings.ToLower(strings.TrimSpace(h.ObfsType))
+	}
+	if mode != "" {
+		if h.ObfsPassword == "" {
+			return fmt.Errorf("hysteria2 %s obfs requires a password", mode)
+		}
+		settings := map[string]any{"password": h.ObfsPassword}
+		if mode == "gecko" {
+			if h.ObfsMinPacketSize <= 0 || h.ObfsMaxPacketSize <= 0 || h.ObfsMinPacketSize > h.ObfsMaxPacketSize || h.ObfsMaxPacketSize > 2048 {
+				return fmt.Errorf("invalid hysteria2 Gecko packet size range")
+			}
+			settings["packetSize"] = fmt.Sprintf("%d-%d", h.ObfsMinPacketSize, h.ObfsMaxPacketSize)
+		} else if mode != "salamander" {
+			return fmt.Errorf("unsupported hysteria2 obfs mode %q", mode)
+		}
+		rawSettings, err := json.Marshal(settings)
+		if err != nil {
+			return err
+		}
+		stream.FinalMask = &coreConf.FinalMask{Udp: []coreConf.Mask{{Type: "salamander", Settings: (*json.RawMessage)(&rawSettings)}}}
+	}
+	if len(h.QUIC) > 0 && string(h.QUIC) != "null" {
+		var quic coreConf.QuicParamsConfig
+		if err := json.Unmarshal(h.QUIC, &quic); err != nil {
+			return fmt.Errorf("decode hysteria2 QUIC parameters: %w", err)
+		}
+		if quic.DisablePathMTUDiscovery || h.QUICDisablePathMTU {
+			quic.DisablePathMTUDiscovery = true
+		}
+		if stream.FinalMask == nil {
+			stream.FinalMask = &coreConf.FinalMask{}
+		}
+		stream.FinalMask.QuicParams = &quic
+	} else if h.QUICDisablePathMTU {
+		if stream.FinalMask == nil {
+			stream.FinalMask = &coreConf.FinalMask{}
+		}
+		stream.FinalMask.QuicParams = &coreConf.QuicParamsConfig{DisablePathMTUDiscovery: true}
+	}
+	inbound.StreamSetting = stream
+	return nil
 }
 
 func ptrTransport(network string) *coreConf.TransportProtocol {

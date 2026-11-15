@@ -59,6 +59,27 @@ func ValidateNode(coreType string, info *panel.NodeInfo, options *conf.Options) 
 	}
 	switch coreType {
 	case "xray":
+		if info.Type == "hysteria2" {
+			if info.Hysteria2 == nil {
+				return fmt.Errorf("missing hysteria2 parameters")
+			}
+			if info.Security != panel.Tls {
+				return fmt.Errorf("xray hysteria2 requires TLS")
+			}
+			if info.Hysteria2.ObfsMode != "" && info.Hysteria2.ObfsMode != "salamander" && info.Hysteria2.ObfsMode != "gecko" {
+				return fmt.Errorf("xray hysteria2 obfs mode %q is not supported", info.Hysteria2.ObfsMode)
+			}
+			if info.Hysteria2.ObfsType != "" && info.Hysteria2.ObfsType != "salamander" && info.Hysteria2.ObfsType != "gecko" {
+				return fmt.Errorf("xray hysteria2 obfs type %q is not supported", info.Hysteria2.ObfsType)
+			}
+			if info.Hysteria2.ObfsMinPacketSize < 0 || info.Hysteria2.ObfsMaxPacketSize < 0 || (info.Hysteria2.ObfsMaxPacketSize > 0 && info.Hysteria2.ObfsMinPacketSize > info.Hysteria2.ObfsMaxPacketSize) {
+				return fmt.Errorf("invalid hysteria2 Gecko packet size range")
+			}
+			if info.Hysteria2.QUICInitialPacketSize != 0 {
+				return fmt.Errorf("xray hysteria2 does not expose sing-box initial_packet_size; use Core=sing")
+			}
+			network = "hysteria"
+		}
 		if info.Type == "masque" {
 			if options.LimitConfig.IPLimit != 0 {
 				return fmt.Errorf("MASQUE device limits are not available in this adapter")
@@ -76,10 +97,10 @@ func ValidateNode(coreType string, info *panel.NodeInfo, options *conf.Options) 
 			}
 			network = "masque"
 		}
-		if !isSupported(info.Type, []string{"vmess", "vless", "trojan", "shadowsocks", "masque"}) {
+		if !isSupported(info.Type, []string{"vmess", "vless", "trojan", "shadowsocks", "hysteria2", "masque"}) {
 			return fmt.Errorf("xray does not support node type %s", info.Type)
 		}
-		if !isSupported(network, []string{"tcp", "ws", "grpc", "httpupgrade", "splithttp", "xhttp", "kcp", "mkcp", "xdrive", "masque"}) {
+		if !isSupported(network, []string{"tcp", "ws", "grpc", "httpupgrade", "splithttp", "xhttp", "kcp", "mkcp", "xdrive", "hysteria", "masque"}) {
 			return fmt.Errorf("xray transport %q is not adapted", network)
 		}
 		if network == "xdrive" && (info.Type != "vless" || info.Security != panel.None) {
