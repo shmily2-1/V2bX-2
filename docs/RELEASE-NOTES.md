@@ -1,4 +1,4 @@
-# v0.1.0-core-upgrade.22：停用本地服务运行时并移除服务管理组件
+# v0.1.0-core-upgrade.23：停用本地服务运行时并移除服务管理组件
 
 - 停用 Tunnel、TUN、WireGuard、AmneziaWG、MTProto 本地服务运行时。
 - 保留历史服务配置文件，不再由 `server` 进程加载。
