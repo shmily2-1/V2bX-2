@@ -81,9 +81,9 @@ OpenRC、SysVinit、runit 和未运行 systemd 的容器不在本一键入口支
 
 安装后的 `v2bx services ...` 支持服务查询、保存、启停、重启、移除、Peer 管理和私有配置导出；`v2bx export-node ...` 导出 HTTP/Mixed、XDRIVE、MASQUE 客户端配置。参数、配置文件与验证限制见 [P2–P5 说明](PROTOCOL-ADAPTATION-P2-P5.md)。修改通过后台加载，保存后的实际运行状态需用 `v2bx services list` 核对。
 
-更新只替换程序和管理组件，保留 `/etc/V2bX` 中的服务 JSON、证书、密钥、地址分配、计量及批次确认状态。重启前先备份整个配置目录；不要只迁移主配置而遗漏 `LocalServiceDir`。
+更新只替换程序和管理组件，保留 `/etc/V2bX` 中的证书、密钥和节点配置。旧 `LocalServiceDir` 文件不会被删除，但当前服务器进程不再加载本地服务。
 
-AmneziaWG 与 MTProto 的独立后端程序需要另行准备，并在配置中填写版本、绝对路径及 SHA256。一键安装器不会自动安装这些后端或配置 NAT。原版 Xboard 还需配套面板改造，更新节点程序不会自动创建面板管理入口。
+旧 AmneziaWG 与 MTProto 配置不再由当前版本启动；更新不会自动删除这些文件。
 
 ## Hysteria2 端口跳跃
 

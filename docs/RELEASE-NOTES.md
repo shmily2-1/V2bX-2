@@ -9,6 +9,8 @@
 
 当前版本仍需在目标环境使用实际证书、端口和客户端完成公网 HY2 互通验收；不自动重启已有节点或覆盖现有配置。
 
+后续修订已停用 Tunnel、TUN、WireGuard、AmneziaWG、MTProto 本地服务运行时；历史服务文件保留但不再加载。
+
 ---
 
 # v0.1.0-core-upgrade.19：补全 VLESS 与 Hysteria2 高级参数

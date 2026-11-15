@@ -13,7 +13,6 @@ import (
 	"github.com/shmily2-1/V2bX-2/conf"
 	vCore "github.com/shmily2-1/V2bX-2/core"
 	"github.com/shmily2-1/V2bX-2/limiter"
-	"github.com/shmily2-1/V2bX-2/localservice"
 	"github.com/shmily2-1/V2bX-2/node"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -36,10 +35,9 @@ func init() {
 }
 
 type serverRuntime struct {
-	services *localservice.Manager
-	config   *conf.Conf
-	core     vCore.Core
-	nodes    *node.Node
+	config *conf.Conf
+	core   vCore.Core
+	nodes  *node.Node
 }
 
 func prepareRuntime(c *conf.Conf) (state *serverRuntime, err error) {
@@ -60,12 +58,6 @@ func prepareRuntime(c *conf.Conf) (state *serverRuntime, err error) {
 		}
 	}
 	state = &serverRuntime{config: c, core: engine, nodes: node.New()}
-	if c.LocalServiceDir != "" {
-		if _, err := localservice.LoadSpecs(c); err != nil {
-			return nil, err
-		}
-		state.services = localservice.New(c)
-	}
 	return state, nil
 }
 
@@ -82,28 +74,16 @@ func (s *serverRuntime) start() error {
 		}
 		return err
 	}
-	if s.services != nil {
-		if err := s.services.Start(); err != nil {
-			_ = s.nodes.Close()
-			if s.core != nil {
-				_ = s.core.Close()
-			}
-			return err
-		}
-	}
 	return nil
 }
 
 func (s *serverRuntime) close() error {
-	var serviceErr, coreErr error
-	if s.services != nil {
-		serviceErr = s.services.Close()
-	}
+	var coreErr error
 	nodeErr := s.nodes.Close()
 	if s.core != nil {
 		coreErr = s.core.Close()
 	}
-	return errors.Join(serviceErr, nodeErr, coreErr)
+	return errors.Join(nodeErr, coreErr)
 }
 
 func replaceRuntime(current **serverRuntime, candidate *conf.Conf) error {

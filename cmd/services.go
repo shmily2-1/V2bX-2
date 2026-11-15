@@ -15,7 +15,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func init() {
+func disabledServicesCommand() {
 	var configFile, id, file, kind, output, clientKey string
 	var uid int
 	root := &cobra.Command{Use: "services", Short: "管理本地服务与 WireGuard Peer"}

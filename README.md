@@ -27,7 +27,7 @@
 
 Hysteria 1、TUIC、AnyTLS、VMess/VLESS、Shadowsocks 不全是独立可执行“内核”，它们随所选主内核及协议库更新。面板仍使用上游 V2board/Xboard 兼容 API；本次没有修改线上面板或替任何节点生成用户。
 
-本地服务还支持 Tunnel、TUN、WireGuard，以及独立 AmneziaWG / MTProto 后端。后两者需要另外准备固定版本的后端程序；一键安装器不下载这些程序，也不自动配置宿主 NAT。HTTP/Mixed 的独立凭据及扩展服务面板管理需要配套修改后的 Xboard，详情见 [P2–P5 说明](docs/PROTOCOL-ADAPTATION-P2-P5.md)。
+当前版本不再启用 Tunnel、TUN、WireGuard、AmneziaWG、MTProto 本地服务运行时；历史配置文件保留但不会被服务器进程加载。代理节点协议和 Xboard 节点适配继续可用。
 
 ## 构建
 
@@ -90,7 +90,7 @@ OpenRC、SysVinit、runit 或未运行 systemd 的容器不在一键入口支持
 
 P0/P1 的基础修复、TLS/ECH、REALITY 与传输配置补全，以及实际兼容性限制见 [适配说明](docs/PROTOCOL-ADAPTATION-P0-P1.md)。
 
-HTTP/Mixed、Tunnel/TUN、XDRIVE、MASQUE、WireGuard Peer 和独立 AmneziaWG/MTProto 后端的配置、管理命令与验证边界见 [P2–P5 说明](docs/PROTOCOL-ADAPTATION-P2-P5.md)。
+HTTP/Mixed、XDRIVE、MASQUE 及 Xray/sing-box 节点配置见 [P2–P5 说明](docs/PROTOCOL-ADAPTATION-P2-P5.md)。
 
 配套 Xboard 已将管理操作接回原节点表单、服务器详情和用户订阅卡片。机器服务同步与一键组件安装见 [Xboard 原生适配](docs/XBOARD-NATIVE.md)。
 
