@@ -77,9 +77,9 @@ OpenRC、SysVinit、runit 和未运行 systemd 的容器不在本一键入口支
 
 仅装程序：`sudo bash install.sh v0.1.0-core-upgrade.21 --non-interactive`。另一个版本只有其 Release 和对应架构资产实际存在时才可指定。`V2bX update` 使用本地已校验适配安装器，不会运行 wyx2685 原版安装器；以后继续使用本仓库的一键命令或本地管理命令更新。
 
-## 扩展协议与本地服务
+## 扩展协议
 
-安装后的 `v2bx services ...` 支持服务查询、保存、启停、重启、移除、Peer 管理和私有配置导出；`v2bx export-node ...` 导出 HTTP/Mixed、XDRIVE、MASQUE 客户端配置。参数、配置文件与验证限制见 [P2–P5 说明](PROTOCOL-ADAPTATION-P2-P5.md)。修改通过后台加载，保存后的实际运行状态需用 `v2bx services list` 核对。
+当前版本保留 HTTP/Mixed、XDRIVE、MASQUE、VLESS 和 Hysteria2 节点适配；Tunnel、TUN、WireGuard、AmneziaWG、MTProto 本地服务运行时已停用。历史服务文件不会自动删除，但 `server` 进程不再加载它们。
 
 更新只替换程序和管理组件，保留 `/etc/V2bX` 中的证书、密钥和节点配置。旧 `LocalServiceDir` 文件不会被删除，但当前服务器进程不再加载本地服务。
 
