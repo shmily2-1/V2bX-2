@@ -257,6 +257,66 @@ def effective_protocol(info, fallback):
     return protocol
 
 
+def valid_certificate_domain(value):
+    """Return whether value is a public DNS name suitable for a certificate."""
+    if not isinstance(value, str):
+        return False
+    domain = value.strip().lower().rstrip('.')
+    if not re.fullmatch(r'(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?', domain):
+        return False
+    try:
+        ipaddress.ip_address(domain)
+    except ValueError:
+        return True
+    return False
+
+
+def panel_certificate_domain(info, previous=None):
+    """Read the certificate name in the same order as Xboard's node payload."""
+    tls = info.get('tls_settings') or info.get('tlsSettings') or {}
+    if not isinstance(tls, dict):
+        raise ProvisionError('面板TLS配置格式错误')
+    old = (previous or {}).get('CertConfig', {})
+    for candidate in (info.get('server_name'), tls.get('server_name'), info.get('host'), old.get('CertDomain')):
+        if valid_certificate_domain(candidate):
+            return candidate.strip().lower().rstrip('.')
+    return ''
+
+
+def panel_masquerade_url(info):
+    """Extract an Xboard Hysteria2 proxy masquerade URL when one is configured."""
+    raw = info.get('masquerade')
+    if not isinstance(raw, dict) or str(raw.get('type', '')).lower() != 'proxy':
+        return ''
+    proxy = raw.get('proxy') if isinstance(raw.get('proxy'), dict) else raw
+    url = proxy.get('url') if isinstance(proxy, dict) else None
+    if not url:
+        return ''
+    if not cfg.valid_masquerade_url(url):
+        raise ProvisionError('面板返回的Hysteria2伪装站点地址无效')
+    return url.strip()
+
+
+def configure_masquerade(node, info, previous=None):
+    masquerade = info.get('masquerade')
+    if isinstance(masquerade, dict) and masquerade.get('type'):
+        if masquerade.get('type') == 'proxy' and not panel_masquerade_url(info):
+            raise ProvisionError('面板返回的Hysteria2伪装站点地址为空')
+        # Let the core keep following panel updates instead of pinning a local
+        # proxy URL that would override proxy/file/string settings forever.
+        node.pop('Hysteria2MasqueradeURL', None)
+        print('已读取面板中的Hysteria2伪装站点配置。')
+        return
+    current = node.get('Hysteria2MasqueradeURL') or (previous or {}).get('Hysteria2MasqueradeURL')
+    url = cfg.ask('Hysteria2伪装站点地址（HTTP(S)，输入 - 关闭）', current or None)
+    if url == '-':
+        node.pop('Hysteria2MasqueradeURL', None)
+    elif url:
+        if not cfg.valid_masquerade_url(url):
+            raise ProvisionError('伪装站点地址必须是有效的http(s) URL，且不能包含账号、密码或片段')
+        node['Hysteria2MasqueradeURL'] = url
+
+
 def inspect_node(node):
     info = api_get(node, 'config')
     protocol = effective_protocol(info, node['NodeType'])
@@ -517,25 +577,20 @@ def reusable_certificate(existing, node, domain, mode, nodes):
     return None
 
 
-def automatic_certificate(node, info, previous):
+def automatic_certificate(node, info, previous, domain_override=None):
     if not needs_tls(info, effective_protocol(info, node['NodeType'])):
         return {'CertMode': 'none'}
     old = (previous or {}).get('CertConfig', {})
     tls = info.get('tls_settings') or info.get('tlsSettings') or {}
     if not isinstance(tls, dict):
         raise ProvisionError('面板TLS配置格式错误')
-    domain = (info.get('server_name') or tls.get('server_name') or info.get('host') or old.get('CertDomain') or '')
+    domain = domain_override if domain_override is not None else (
+        info.get('server_name') or tls.get('server_name') or info.get('host') or old.get('CertDomain') or '')
     if not isinstance(domain, str):
         raise ProvisionError('面板未提供有效证书域名')
     domain = domain.strip().lower().rstrip('.')
-    if not re.fullmatch(r'(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?', domain):
+    if not valid_certificate_domain(domain):
         raise ProvisionError('面板未提供有效证书域名，请在面板填写节点域名后重试')
-    try:
-        ipaddress.ip_address(domain)
-    except ValueError:
-        pass
-    else:
-        raise ProvisionError('面板证书域名不能是IP地址，请在面板填写节点域名')
     if old.get('CertDomain', '').lower().rstrip('.') == domain and old.get('CertMode') in ('http', 'dns', 'file'):
         # Preflight validates the existing pair. Never abandon a broken/expired
         # pair for a new directory and silently request another certificate.
@@ -606,15 +661,13 @@ def quick_add_node(document, core, seed=None):
         merged.update({k: node[k] for k in ('Core', 'ApiHost', 'ApiKey', 'NodeID', 'NodeType')})
         node = merged
     if core == 'sing' and protocol == 'hysteria2':
-        current_masquerade = node.get('Hysteria2MasqueradeURL', '')
-        masquerade_url = cfg.ask('Hysteria2伪装站点地址（HTTP(S)，输入 - 关闭）', current_masquerade or None)
-        if masquerade_url == '-':
-            node.pop('Hysteria2MasqueradeURL', None)
-        elif masquerade_url:
-            if not cfg.valid_masquerade_url(masquerade_url):
-                raise ProvisionError('伪装站点地址必须是有效的http(s) URL，且不能包含账号、密码或片段')
-            node['Hysteria2MasqueradeURL'] = masquerade_url
-    node['CertConfig'] = automatic_certificate(node, info, previous)
+        configure_masquerade(node, info)
+    cert_domain = ''
+    if needs_tls(info, protocol):
+        cert_domain = panel_certificate_domain(info, previous)
+        if not cert_domain:
+            cert_domain = cfg.required('证书域名（Xboard Hysteria 节点未返回，请填写实际证书域名）')
+    node['CertConfig'] = automatic_certificate(node, info, previous, cert_domain or None)
     if previous is None:
         document['Nodes'].append(node)
     else:
@@ -748,21 +801,15 @@ def wizard(existing=None):
             raise ProvisionError('无法识别节点，请核对密钥、节点ID与面板协议')
         protocol = effective_protocol(info, node['NodeType'])
         print('识别到协议：' + protocol)
+        old = {}
         if core == 'sing' and protocol == 'hysteria2':
             old = next((item for item in (existing or {}).get('Nodes', [])
                         if item.get('ApiHost', '').rstrip('/') == node['ApiHost']
                         and item.get('NodeID') == node['NodeID']
                         and item.get('NodeType') in ('hysteria', 'hysteria2')), {})
-            old_url = old.get('Hysteria2MasqueradeURL', '')
-            masquerade_url = cfg.ask('Hysteria2伪装站点地址（HTTP(S)，输入 - 关闭）', old_url or None)
-            if masquerade_url == '-':
-                node.pop('Hysteria2MasqueradeURL', None)
-            elif masquerade_url:
-                if not cfg.valid_masquerade_url(masquerade_url):
-                    raise ProvisionError('伪装站点地址必须是有效的http(s) URL，且不能包含账号、密码或片段')
-                node['Hysteria2MasqueradeURL'] = masquerade_url
+            configure_masquerade(node, info, old)
         if needs_tls(info, protocol):
-            domain = cfg.ask('证书域名', info.get('server_name') or info.get('host') or '')
+            domain = cfg.ask('证书域名', panel_certificate_domain(info, old))
             mode = cfg.choose('证书方式', ('http', 'dns', 'file'), 'http')
             directory = '/etc/V2bX/certs/node-' + str(node['NodeID']) + '-' + str(len(nodes) + 1)
             reused = reusable_certificate(existing, node, domain, mode, nodes) if mode != 'file' else None

@@ -211,18 +211,51 @@ class ProvisionTests(unittest.TestCase):
             document = p.quick_wizard()
         self.assertEqual(document['Nodes'][0]['CertConfig'], {'CertMode': 'none'})
 
+    def test_panel_masquerade_skips_prompt_and_removes_stale_local_override(self):
+        self.info = {'protocol': 'hysteria', 'version': 2, 'server_port': 443,
+                     'server_name': 'node.example.test', 'ports': '443-8000',
+                     'masquerade': {'type': 'proxy', 'url': 'https://www.example.test'}}
+        self.node.update(NodeType='hysteria', Hysteria2MasqueradeURL='https://old.example.test')
+        with patch('builtins.input', side_effect=self.quick_answers() + ['N']) as ask:
+            document = p.quick_wizard(self.document)
+        self.assertEqual(ask.call_count, 5)
+        self.assertNotIn('Hysteria2MasqueradeURL', document['Nodes'][0])
+        self.assertEqual(document['Nodes'][0]['CertConfig']['CertDomain'], 'node.example.test')
+        self.assertEqual(p.inspect_node(document['Nodes'][0])['info']['ports'], '443-8000')
+        self.assertEqual(self.node['Hysteria2MasqueradeURL'], 'https://old.example.test')
+
+    def test_panel_string_masquerade_is_not_replaced_by_local_proxy(self):
+        node = {'Hysteria2MasqueradeURL': 'https://old.example.test'}
+        with patch.object(p.cfg, 'ask') as ask:
+            p.configure_masquerade(node, {'masquerade': {'type': 'string', 'content': 'ready'}})
+        ask.assert_not_called()
+        self.assertNotIn('Hysteria2MasqueradeURL', node)
+
+    def test_panel_masquerade_invalid_url_is_rejected_without_prompt(self):
+        for url in ('ftp://example.test', 'https://user:secret@example.test', ''):
+            with self.subTest(url=url), patch.object(p.cfg, 'ask') as ask:
+                with self.assertRaises(p.ProvisionError):
+                    p.configure_masquerade({}, {'masquerade': {'type': 'proxy', 'url': url}})
+                ask.assert_not_called()
+
+    def test_quick_ip_host_falls_back_to_nested_certificate_domain(self):
+        self.info.update(tls=1, host='192.0.2.1', tls_settings={'server_name': 'tls.example.test'})
+        with patch('builtins.input', side_effect=self.quick_answers() + ['N']):
+            document = p.quick_wizard()
+        self.assertEqual(document['Nodes'][0]['CertConfig']['CertDomain'], 'tls.example.test')
+
     def test_quick_tls_domain_uses_nested_settings(self):
         self.info.update(tls=1, tls_settings={'server_name': 'tls.example.test'})
         with patch('builtins.input', side_effect=self.quick_answers() + ['N']):
             document = p.quick_wizard()
         self.assertEqual(document['Nodes'][0]['CertConfig']['CertDomain'], 'tls.example.test')
 
-    def test_quick_missing_domain_fails_without_inventing_one_or_fifth_prompt(self):
+    def test_quick_missing_domain_prompts_for_certificate_domain(self):
         self.info.update(tls=1)
-        with patch('builtins.input', side_effect=self.quick_answers()) as ask:
-            with self.assertRaisesRegex(p.ProvisionError, '域名'):
-                p.quick_wizard()
-        self.assertEqual(ask.call_count, 4)
+        with patch('builtins.input', side_effect=self.quick_answers() + ['node.example.test', 'N']) as ask:
+            document = p.quick_wizard()
+        self.assertEqual(document['Nodes'][0]['CertConfig']['CertDomain'], 'node.example.test')
+        self.assertEqual(ask.call_count, 6)
 
     def test_quick_keeps_other_nodes_settings_and_existing_certificate_paths(self):
         self.info.update(tls=1, server_name='old.example.test')
