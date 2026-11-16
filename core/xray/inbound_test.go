@@ -29,6 +29,44 @@ func TestRejectedLegacyKCPOptionsAndUnknownTransport(t *testing.T) {
 	}
 }
 
+func TestNormalizeSplitHTTPHeaders(t *testing.T) {
+	tests := []struct {
+		name     string
+		settings string
+		want     map[string]string
+	}{
+		{name: "empty array", settings: `{"path":"/x","extra":{"headers":[]}}`, want: map[string]string{}},
+		{name: "object", settings: `{"path":"/x","extra":{"headers":{"X-Test":"ok"}}}`, want: map[string]string{"X-Test": "ok"}},
+		{name: "pair array", settings: `{"path":"/x","extra":{"headers":[["X-Test","ok"]]}}`, want: map[string]string{"X-Test": "ok"}},
+		{name: "name value array", settings: `{"path":"/x","extra":{"headers":[{"name":"X-Test","value":"ok"}]}}`, want: map[string]string{"X-Test": "ok"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stream, err := buildStream("xhttp", json.RawMessage(tt.settings))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if stream.SplitHTTPSettings == nil {
+				t.Fatal("missing split HTTP settings")
+			}
+			var extra struct {
+				Headers map[string]string `json:"headers"`
+			}
+			if err := json.Unmarshal(stream.SplitHTTPSettings.Extra, &extra); err != nil {
+				t.Fatal(err)
+			}
+			if len(extra.Headers) != len(tt.want) {
+				t.Fatalf("headers = %#v, want %#v", extra.Headers, tt.want)
+			}
+			for key, value := range tt.want {
+				if extra.Headers[key] != value {
+					t.Fatalf("headers[%q] = %q, want %q", key, extra.Headers[key], value)
+				}
+			}
+		})
+	}
+}
+
 func TestFallbackDoesNotDisableVLESSEncryption(t *testing.T) {
 	opts := &conf.Options{XrayOptions: conf.NewXrayOptions()}
 	opts.XrayOptions.EnableFallback = true

@@ -1,3 +1,11 @@
+# v0.1.0-core-upgrade.25：修复 XHTTP extra.headers 数组兼容
+
+- 修复面板将 XHTTP `extra.headers` 下发为空数组或键值数组时，Xray 无法构建 `SplitHTTPConfig` 的问题。
+- 支持空数组、`[name,value]` 数组和 `{name,value}` 数组，并保留 XHTTP 其他参数。
+- 增加 XHTTP 归一化回归测试；一键安装器默认版本更新为 `.25`。
+
+---
+
 # v0.1.0-core-upgrade.24：Xboard VLESS 完整组合与 XDRIVE 本地回环验证
 
 这是 prerelease / 验收版。相对 .23，本版本同步一键安装脚本和管理菜单版本固定值，保留 Xray 26.11.9、sing-box 1.15.0-alpha.13、Hysteria 2.13.0 锁定内核，并完成 XDRIVE 本地共享存储回环验证。远端 S3/Google Drive 凭据不随安装包分发。

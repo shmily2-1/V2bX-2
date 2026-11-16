@@ -1,6 +1,7 @@
 package xray
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
@@ -303,6 +304,13 @@ func normalizeNetwork(network string) string {
 
 func buildStream(network string, settings json.RawMessage) (*coreConf.StreamConfig, error) {
 	network = normalizeNetwork(network)
+	if network == "splithttp" || network == "xhttp" {
+		var err error
+		settings, err = normalizeSplitHTTPSettings(settings)
+		if err != nil {
+			return nil, err
+		}
+	}
 	t := coreConf.TransportProtocol(network)
 	stream := &coreConf.StreamConfig{Network: &t}
 	var target any
@@ -349,6 +357,89 @@ func buildStream(network string, settings json.RawMessage) (*coreConf.StreamConf
 		}
 	}
 	return stream, nil
+}
+
+// normalizeSplitHTTPSettings keeps XHTTP compatible with panel payloads that
+// encode extra.headers as an array. Xray's SplitHTTPConfig requires a JSON
+// object (map[string]string) for headers, while older panel forms commonly
+// send [] for an empty list or [{"name":"Header","value":"value"}].
+func normalizeSplitHTTPSettings(settings json.RawMessage) (json.RawMessage, error) {
+	if len(settings) == 0 || string(settings) == "null" {
+		return settings, nil
+	}
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal(settings, &root); err != nil {
+		return nil, fmt.Errorf("decode XHTTP settings: %w", err)
+	}
+	extraRaw, ok := root["extra"]
+	if !ok || len(extraRaw) == 0 || string(extraRaw) == "null" {
+		return settings, nil
+	}
+	var extra map[string]json.RawMessage
+	if err := json.Unmarshal(extraRaw, &extra); err != nil {
+		return nil, fmt.Errorf("decode XHTTP extra settings: %w", err)
+	}
+	headersRaw, ok := extra["headers"]
+	if !ok || len(headersRaw) == 0 || len(bytes.TrimSpace(headersRaw)) == 0 || bytes.TrimSpace(headersRaw)[0] != '[' {
+		return settings, nil
+	}
+	headers, err := normalizeSplitHTTPHeaders(headersRaw)
+	if err != nil {
+		return nil, err
+	}
+	extra["headers"] = headers
+	normalizedExtra, err := json.Marshal(extra)
+	if err != nil {
+		return nil, fmt.Errorf("encode XHTTP extra settings: %w", err)
+	}
+	root["extra"] = normalizedExtra
+	normalized, err := json.Marshal(root)
+	if err != nil {
+		return nil, fmt.Errorf("encode XHTTP settings: %w", err)
+	}
+	return normalized, nil
+}
+
+func normalizeSplitHTTPHeaders(raw json.RawMessage) (json.RawMessage, error) {
+	var items []json.RawMessage
+	if err := json.Unmarshal(raw, &items); err != nil {
+		return nil, fmt.Errorf("decode XHTTP headers array: %w", err)
+	}
+	result := make(map[string]string, len(items))
+	for i, item := range items {
+		var pair []string
+		if err := json.Unmarshal(item, &pair); err == nil && len(pair) == 2 {
+			result[pair[0]] = pair[1]
+			continue
+		}
+		var object map[string]json.RawMessage
+		if err := json.Unmarshal(item, &object); err != nil {
+			return nil, fmt.Errorf("decode XHTTP headers[%d]: expected [name,value] or object: %w", i, err)
+		}
+		if nameRaw, nameOK := object["name"]; nameOK {
+			valueRaw, valueOK := object["value"]
+			if !valueOK {
+				return nil, fmt.Errorf("decode XHTTP headers[%d]: missing value", i)
+			}
+			var name, value string
+			if err := json.Unmarshal(nameRaw, &name); err != nil {
+				return nil, fmt.Errorf("decode XHTTP headers[%d] name: %w", i, err)
+			}
+			if err := json.Unmarshal(valueRaw, &value); err != nil {
+				return nil, fmt.Errorf("decode XHTTP headers[%d] value: %w", i, err)
+			}
+			result[name] = value
+			continue
+		}
+		for key, valueRaw := range object {
+			var value string
+			if err := json.Unmarshal(valueRaw, &value); err != nil {
+				return nil, fmt.Errorf("decode XHTTP headers[%d] value for %q: %w", i, key, err)
+			}
+			result[key] = value
+		}
+	}
+	return json.Marshal(result)
 }
 
 func buildHysteria2(_ *conf.Options, nodeInfo *panel.NodeInfo, inbound *coreConf.InboundDetourConfig) error {
