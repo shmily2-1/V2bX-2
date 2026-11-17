@@ -50,3 +50,17 @@ with socket.socket(socket.AF_INET,socket.SOCK_DGRAM) as receiver, socket.socket(
         assert not received(), 'manual rollback must restore DROP'
         subprocess.run(['nft','list','table','ip','v2bx_hop_keep'],check=True,stdout=subprocess.DEVNULL)
 print('PASS: real UDP DROP -> two-priority ACCEPT -> committed -> rollback DROP; NAT preserved')
+
+# Sysctl writes below are confined to this disposable network namespace;
+# the persistent drop-in and backups also stay in a temporary directory.
+from unittest.mock import patch
+with tempfile.TemporaryDirectory(prefix='v2bx-ipv6-netns-') as temp:
+    folder = Path(temp)
+    backup = folder / 'backup'
+    backup.mkdir()
+    with patch.object(m, 'backup_dir', return_value=backup):
+        m.disable_ipv6(folder / 'disable-ipv6.conf')
+    assert all(p.read_text().strip() == '1' for p in Path('/proc/sys/net/ipv6/conf').glob('*/disable_ipv6'))
+    assert not subprocess.check_output(['ip', '-6', '-o', 'addr', 'show']).strip()
+    assert b'net.ipv6.conf.default.disable_ipv6=1' in (folder / 'disable-ipv6.conf').read_bytes()
+print('PASS: IPv6 disabled in a real isolated namespace; persistence file written outside host /etc')

@@ -122,6 +122,85 @@ update() {
   run_installer "$@"
   echo '程序和菜单来自同一个已校验 Release。旧进程未重启，请安排 v2bx restart。'
 }
+update_shell() (
+  root_only
+  [[ $# -le 1 ]] || { fail '只接受一个可选版本标签'; return 1; }
+  local revision=${1:-main} tmp url source name
+  [[ $revision == main || $revision =~ ^v[0-9][a-zA-Z0-9._-]*$ ]] || { fail '无效版本标签'; return 1; }
+  [[ -d $state ]] || { fail '缺少管理组件目录，请先安装'; return 1; }
+  exec 8>"$state/.install.lock"
+  flock -n 8 || { fail '管理组件正在更新'; return 1; }
+  tmp=$(mktemp -d)
+  trap 'rm -f -- "$tmp"/*; rmdir -- "$tmp"' EXIT
+  fetch_script() {
+    if command -v curl >/dev/null; then
+      curl -fsSL --retry 3 --connect-timeout 15 --max-time 180 --proto '=https' --proto-redir '=https' "$1" -o "$2"
+    elif command -v wget >/dev/null; then
+      wget --https-only --timeout=30 --tries=3 -qO "$2" "$1"
+    else
+      fail '请先安装 curl 或 wget'; return 1
+    fi
+  }
+  if [[ $revision == main ]]; then
+    fetch_script 'https://api.github.com/repos/shmily2-1/V2bX-2/commits/main' "$tmp/commit.json"
+    revision=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["sha"])' "$tmp/commit.json")
+    [[ $revision =~ ^[0-9a-f]{40}$ ]] || { fail '无法确定管理脚本版本'; return 1; }
+  fi
+  echo '正在更新管理脚本…'
+  for source in V2bX.sh initconfig.sh configure.py provision.py system-tools.py scripts/install.sh install.sh; do
+    name=${source##*/}
+    [[ $source != install.sh ]] || name=bootstrap.sh
+    url="https://raw.githubusercontent.com/shmily2-1/V2bX-2/$revision/$source"
+    fetch_script "$url" "$tmp/$name"
+    case $name in
+      *.sh) bash -n "$tmp/$name" ;;
+      *.py) python3 -c 'import ast,sys; ast.parse(open(sys.argv[1], encoding="utf-8").read())' "$tmp/$name" ;;
+    esac
+  done
+  python3 - "$state" "$tmp" <<'PY'
+import os
+from pathlib import Path
+import shutil
+import sys
+import tempfile
+
+state, staged = map(Path, sys.argv[1:])
+names = ('V2bX.sh', 'initconfig.sh', 'configure.py', 'provision.py', 'system-tools.py', 'install.sh', 'bootstrap.sh')
+for name in names:
+    path = state / name
+    if path.is_symlink() or (path.exists() and not path.is_file()):
+        raise ValueError('管理脚本路径不是普通文件：' + name)
+backup = Path(tempfile.mkdtemp(prefix='scripts.backup.', dir=state))
+for name in names:
+    path = state / name
+    if path.exists():
+        shutil.copy2(path, backup / name)
+def publish(source, target, mode):
+    fd, temporary = tempfile.mkstemp(prefix='.script-new.', dir=state)
+    os.close(fd)
+    try:
+        shutil.copy2(source, temporary)
+        os.chmod(temporary, mode)
+        os.replace(temporary, target)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+applied = []
+try:
+    for name in names:
+        publish(staged / name, state / name, 0o755)
+        applied.append(name)
+except BaseException:
+    for name in reversed(applied):
+        if (backup / name).exists():
+            publish(backup / name, state / name, (backup / name).stat().st_mode & 0o7777)
+        else:
+            (state / name).unlink()
+    raise
+print('管理脚本已更新，原脚本备份：' + str(backup))
+PY
+  echo '程序、节点配置和运行状态保持；下次程序更新仍使用已发布的固定版本。'
+)
 install_node() {
   run_installer "$@"
   echo '========== 首次安装配置指引 =========='
@@ -250,7 +329,8 @@ V2bX-2 管理命令（兼容原项目，v2bx 始终指向菜单）：
   v2bx                       显示原风格菜单
   v2bx install [v版本]       安装后可连续配置多个节点并自动部署
   v2bx update [v版本]        仅更新程序及菜单，不重新配置/启动
-  v2bx update_shell [v版本]   从同一 Release 重装/升级程序及管理组件
+  v2bx update-script [v版本]  只更新管理脚本；默认读取main的固定提交
+  v2bx update_shell [v版本]   update-script 的兼容别名
   v2bx config|generate       在线预检、证书申请、备份配置并启动验证
   v2bx node-add              新增一个节点并部署
   v2bx node-manage           查看或修改节点
@@ -267,6 +347,7 @@ V2bX-2 管理命令（兼容原项目，v2bx 始终指向菜单）：
   v2bx ports                 Hysteria2 跳跃对接说明
   v2bx bbr                   签名发行版源内核/BBR（不自动重启）
   v2bx open-ports            直接放行全部TCP/UDP入站端口
+  v2bx disable-ipv6          立即禁用IPv6并保存到sysctl配置
   v2bx --root /隔离根 ...    验收专用；服务/日志操作被禁止
 安装填写核心、面板地址、密钥、节点ID后自动启动；更新不会自动重启。
 不执行原版安装器/第三方BBR脚本，不关闭防火墙。
@@ -278,12 +359,13 @@ dispatch() {
   case $command in
     menu) menu ;;
     install) install_node "$@" ;;
-    update|update_shell) update "$@" ;;
+    update) update "$@" ;;
+    update-script|update_shell) update_shell "$@" ;;
     start|stop|restart|enable|disable) control "$command" ;;
     status) status ;;
     config) edit "$@" ;; generate) generate "$@" ;; uninstall) uninstall "$@" ;;
     node-add) node_action add "$@" ;; node-manage) node_action manage "$@" ;; node-remove) node_action remove "$@" ;;
-    bbr|open-ports) root_only; host_only; python3 "$state/system-tools.py" "$command" ;;
+    bbr|open-ports|disable-ipv6) root_only; host_only; python3 "$state/system-tools.py" "$command" ;;
     log) host_only; journalctl -u V2bX.service -e --no-pager -f ;;
     version|x25519) find_binary; "$binary" "$command" "$@" ;;
     export-node) find_binary; "$binary" export-node --config "$config" "$@" ;;
@@ -322,24 +404,27 @@ menu() {
 11. 一键安装 BBR（最新发行版内核）
 12. 查看 V2bX 版本
 13. 生成 X25519 密钥
-14. 升级 V2bX 维护脚本
+14. 更新 V2bX 管理脚本（仅脚本）
 15. 生成 V2bX 配置文件
 16. 放行 VPS 的所有网络端口
-17. 退出脚本
+17. 禁用 IPv6
 18. 新增节点
 19. 节点管理
 20. 移除节点
+————————————————
+99. 退出脚本
 MENU
     printf 'V2bX状态: %s\n是否开机自启: %s\n\n' "$service_state" "$autostart"
-    read -r -p '请输入选择 [0-20]：' choice || return 0
+    read -r -p '请输入选择 [0-20，99退出]：' choice || return 0
     case $choice in
       0) action=config ;; 1) action=install ;; 2) action=update ;; 3) action=uninstall ;;
       4) action=start ;; 5) action=stop ;; 6) action=restart ;; 7) action=status ;;
       8) action=log ;; 9) action=enable ;; 10) action=disable ;;
       11) action=bbr ;;
       12) action=version ;; 13) action=x25519 ;; 14) action=update_shell ;;
-      15) action=generate ;; 16) action=open-ports ;; 17) return 0 ;;
+      15) action=generate ;; 16) action=open-ports ;; 17) action=disable-ipv6 ;;
       18) action=node-add ;; 19) action=node-manage ;; 20) action=node-remove ;;
+      99) return 0 ;;
       *) echo '无效选项'; continue ;;
     esac
     # A subshell retains errexit for each action. Do not suppress failures via an if/function call.
@@ -348,6 +433,9 @@ MENU
     result=$?
     set -e
     if ((result)); then printf '操作失败（%s），未报告为成功。\n' "$result" >&2; fi
+    if ((result == 0)) && [[ $action == update_shell ]]; then
+      if [[ -n $root ]]; then exec bash "$self" --root "$root" menu; else exec bash "$self" menu; fi
+    fi
   done
 }
 dispatch "$@"

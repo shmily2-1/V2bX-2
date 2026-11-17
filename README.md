@@ -84,6 +84,8 @@ HTTP-01需要TCP80且被占用时，自动停止并恢复可识别的托管服�
 
 只要离线生成配置：`v2bx generate --offline`。`--root`始终离线，禁止宿主服务操作。菜单编号与原项目一致，8日志、9自启、10取消自启、11BBR、16全端口放行。菜单操作直接执行；BBR只使用发行版软件源且不自动重启，全开放保留NAT并提供手动撤回状态。详见[在线配置及系统维护](docs/ONLINE-PROVISION.md)。
 
+菜单14只更新管理脚本（`v2bx update-script`），不替换程序或重启节点；菜单17禁用IPv6（`v2bx disable-ipv6`），菜单99退出。新增、管理和移除节点仍为18、19、20。IPv6原设置会先备份，禁用配置保存到独立的sysctl文件。
+
 OpenRC、SysVinit、runit 或未运行 systemd 的容器不在一键入口支持范围内；脚本会在下载前拒绝继续，不会自动改造成其它 init 系统。需要二进制-only 部署时请先审查 Release 包并手动托管，不要执行依赖 `systemctl` 的管理命令。指定版本、升级/回滚步骤、服务和配置说明见 [安装指南](docs/INSTALL.md)。**Hysteria2 跳跃仍须配套 Xboard 补丁及 UDP 放行，安装脚本不会代改面板。**
 
 ## 验证与维护

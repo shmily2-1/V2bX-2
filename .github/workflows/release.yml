@@ -33,6 +33,7 @@ jobs:
           python3 scripts/test-bootstrap.py
           python3 scripts/test-provision.py
           python3 scripts/test-http-port.py
+          python3 scripts/test-system-tools.py
 
   test:
     runs-on: ubuntu-latest

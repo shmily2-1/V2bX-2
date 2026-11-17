@@ -40,16 +40,21 @@ class BootstrapTest(unittest.TestCase):
 import json, os, pathlib, shutil, sys
 args = sys.argv[1:]
 url = next(value for value in args if value.startswith('https://'))
-assert url.startswith(('https://raw.githubusercontent.com/shmily2-1/V2bX-2/', 'https://github.com/shmily2-1/V2bX-2/releases/'))
+assert url.startswith(('https://raw.githubusercontent.com/shmily2-1/V2bX-2/', 'https://github.com/shmily2-1/V2bX-2/releases/', 'https://api.github.com/repos/shmily2-1/V2bX-2/'))
 out = args[args.index('-o') + 1]
 path = pathlib.Path(os.environ['FIXTURE_ASSETS'])
-if url.endswith('/scripts/install.sh'):
+if url.endswith('/commits/main'):
+    pathlib.Path(out).write_text(json.dumps({'sha': 'f' * 40}))
+    source = None
+elif url.endswith('/scripts/install.sh'):
     source = pathlib.Path(os.environ['FIXTURE_HELPER'])
+elif url.startswith('https://raw.githubusercontent.com/shmily2-1/V2bX-2/'):
+    source = pathlib.Path(os.environ['FIXTURE_SOURCE']) / url.rsplit('/', 1)[1]
 else:
     source = path / url.rsplit('/', 1)[1]
 with open(os.environ['FIXTURE_LOG'], 'a') as handle:
     handle.write(json.dumps(url) + '\\n')
-shutil.copyfile(source, out)
+if source is not None: shutil.copyfile(source, out)
 ''')
         self.write_mock('unzip', '''
 import pathlib, sys, zipfile
@@ -63,6 +68,7 @@ sys.stdout.buffer.write(zipfile.ZipFile(archive).read(member))
             'FIXTURE_ASSETS': str(self.assets),
             'FIXTURE_LOG': str(self.log),
             'FIXTURE_HELPER': str(HELPER),
+            'FIXTURE_SOURCE': str(ROOT),
         }
         archive = self.assets / 'V2bX-linux-amd64.zip'
         with zipfile.ZipFile(archive, 'w') as bundle:
@@ -109,11 +115,54 @@ sys.stdout.buffer.write(zipfile.ZipFile(archive).read(member))
 
     def test_menu_version_dispatch_uses_manager_state_not_display_state(self):
         self.run_bootstrap()
-        output = self.run_menu('menu', text='12\n17\n')
+        output = self.run_menu('menu', text='12\n99\n')
         self.assertIn('fixture V2bX', output)
         self.assertNotIn('操作失败', output)
-        for label in ('8. 查看 V2bX 日志', '9. 设置 V2bX 开机自启', '10. 取消 V2bX 开机自启', '16. 放行 VPS', '18. 新增节点', '19. 节点管理', '20. 移除节点'):
+        for label in ('8. 查看 V2bX 日志', '9. 设置 V2bX 开机自启', '10. 取消 V2bX 开机自启', '16. 放行 VPS', '17. 禁用 IPv6', '18. 新增节点', '19. 节点管理', '20. 移除节点', '99. 退出脚本'):
             self.assertIn(label, output)
+        self.assertNotIn('17. 退出脚本', output)
+
+    def test_menu_ipv6_action_is_blocked_in_isolated_root(self):
+        self.run_bootstrap()
+        output = self.run_menu('menu', text='17\n99\n')
+        self.assertIn('隔离模式禁止', output)
+        self.assertIn('操作失败', output)
+
+    def test_script_only_update_preserves_binary_config_and_service(self):
+        self.run_bootstrap()
+        binary = self.root / 'usr/local/V2bX/V2bX'
+        config = self.root / 'etc/V2bX/config.json'
+        unit = self.root / 'etc/systemd/system/V2bX.service'
+        manager = self.root / 'usr/local/lib/V2bX-2/V2bX.sh'
+        config.write_text('existing-private-config')
+        manager.write_bytes(manager.read_bytes() + b'\n# previous-manager\n')
+        before = {p: p.read_bytes() for p in (binary, config, unit, manager)}
+        self.log.write_text('')
+        output = self.run_menu('update-script')
+        self.assertIn('管理脚本已更新', output)
+        for path in (binary, config, unit):
+            self.assertEqual(path.read_bytes(), before[path])
+        self.assertEqual(manager.read_bytes(), MANAGEMENT.read_bytes())
+        backups = list(manager.parent.glob('scripts.backup.*/V2bX.sh'))
+        self.assertEqual(len(backups), 1)
+        self.assertEqual(backups[0].read_bytes(), before[manager])
+        urls = [json.loads(line) for line in self.log.read_text().splitlines()]
+        self.assertFalse(any('/releases/' in url or url.endswith('.zip') for url in urls))
+        self.assertTrue(any('/' + 'f' * 40 + '/V2bX.sh' in url for url in urls))
+
+    def test_script_update_failure_preserves_existing_manager(self):
+        self.run_bootstrap()
+        manager = self.root / 'usr/local/lib/V2bX-2/V2bX.sh'
+        before = manager.read_bytes()
+        self.write_mock('curl', 'import sys; sys.exit(22)\n')
+        self.run_menu('update-script', ok=False)
+        self.assertEqual(manager.read_bytes(), before)
+
+    def test_menu_script_update_reloads_and_uses_99_to_exit(self):
+        self.run_bootstrap()
+        output = self.run_menu('menu', text='14\n99\n')
+        self.assertIn('管理脚本已更新', output)
+        self.assertNotIn('操作失败', output)
 
     def test_isolated_menu_uses_recorded_binary(self):
         self.run_bootstrap()
@@ -254,7 +303,7 @@ sys.stdout.buffer.write(zipfile.ZipFile(archive).read(member))
 
     def test_staging_forbids_host_service_calls(self):
         self.run_bootstrap()
-        for command in ('start', 'stop', 'restart', 'enable', 'disable', 'log', 'bbr', 'open-ports'):
+        for command in ('start', 'stop', 'restart', 'enable', 'disable', 'log', 'bbr', 'open-ports', 'disable-ipv6'):
             with self.subTest(command=command):
                 self.assertIn('隔离模式禁止', self.run_menu(command, ok=False))
 
@@ -319,7 +368,7 @@ sys.stdout.buffer.write(zipfile.ZipFile(archive).read(member))
     def test_same_menu_uninstall_reinstall_enters_first_multinode_wizard(self):
         self.seed_private_installation()
         answers = (['3', '1'] + self.node_answers(node_id='21') + ['Y']
-                   + self.node_answers(core='xray', node_id='22') + ['N', '17'])
+                   + self.node_answers(core='xray', node_id='22') + ['N', '99'])
         output = self.run_menu('menu', text='\n'.join(answers) + '\n')
         self.assertNotIn('操作失败', output)
         self.assertNotIn('No such file or directory', output)

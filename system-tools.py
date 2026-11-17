@@ -119,6 +119,48 @@ def bbr():
     print('当前BBR已核验启用。备份：' + str(backup) + '；新内核是否生效需重启后核验uname -r。')
 
 
+def disable_ipv6(destination=Path('/etc/sysctl.d/99-v2bx-disable-ipv6.conf'),
+                 parameters=Path('/proc/sys/net/ipv6/conf')):
+    if destination.is_symlink():
+        raise RuntimeError('IPv6配置路径为符号链接，未覆盖')
+    previous = {path: path.read_text().strip() for path in sorted(parameters.glob('*/disable_ipv6'))}
+    if parameters.exists() and not previous:
+        raise RuntimeError('无法读取当前IPv6开关')
+    if any(value not in ('0', '1') for value in previous.values()):
+        raise RuntimeError('IPv6开关返回无效值')
+    old = destination.read_bytes() if destination.exists() else None
+    backup = backup_dir()
+    if old is not None:
+        (backup / destination.name).write_bytes(old)
+    (backup / 'ipv6-state.json').write_text(json.dumps({
+        'config': str(destination), 'config_existed': old is not None,
+        'parameters': {str(path): value for path, value in previous.items()},
+    }, indent=2))
+    data = (b'# Managed by V2bX: disable existing and future IPv6 interfaces.\n'
+            b'net.ipv6.conf.all.disable_ipv6=1\n'
+            b'net.ipv6.conf.default.disable_ipv6=1\n'
+            b'net.ipv6.conf.lo.disable_ipv6=1\n')
+    try:
+        atomic_bytes(destination, data)
+        if previous:
+            run('sysctl', '-p', str(destination))
+            if any(path.read_text().strip() != '1' for path in parameters.glob('*/disable_ipv6')):
+                raise RuntimeError('IPv6开关实际值核验失败')
+    except BaseException:
+        if old is None:
+            destination.unlink(missing_ok=True)
+        else:
+            atomic_bytes(destination, old)
+        for path, value in previous.items():
+            if path.exists():
+                path.write_text(value + '\n')
+        raise
+    if previous:
+        print('IPv6已禁用并保存重启生效配置。备份：' + str(backup))
+    else:
+        print('当前内核未提供IPv6开关，已保存禁用配置。备份：' + str(backup))
+
+
 def nft_plan(tag):
     ruleset = json.loads(run('nft', '-j', 'list', 'ruleset').stdout)
     chains = []
@@ -247,7 +289,7 @@ def open_ports():
 
 def main():
     parser = argparse.ArgumentParser(description='V2bX-2系统工具')
-    parser.add_argument('action', choices=('bbr', 'open-ports', 'rollback'))
+    parser.add_argument('action', choices=('bbr', 'open-ports', 'disable-ipv6', 'rollback'))
     parser.add_argument('state', nargs='?')
     parser.add_argument('--scheduled', action='store_true')
     args = parser.parse_args()
@@ -257,6 +299,8 @@ def main():
         bbr()
     elif args.action == 'open-ports':
         open_ports()
+    elif args.action == 'disable-ipv6':
+        disable_ipv6()
     elif args.state:
         rollback(args.state, args.scheduled)
     else:
