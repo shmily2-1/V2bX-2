@@ -16,7 +16,7 @@
 
 ## 1. 先补齐 Xboard 节点配置 API
 
-配套 `shmily2-1/Xboard` 的 HY2 修复已同时覆盖原有和 `v2bx-extended` 配置分支，升级该面板版本即可，无需对该分支重复应用下面的上游补丁。节点应更新到 `v0.1.0-core-upgrade.27`。已有上游补丁只覆盖原有分支，不能代替扩展后端修复。
+配套 `shmily2-1/Xboard` 的 HY2 修复已同时覆盖原有和 `v2bx-extended` 配置分支，升级该面板版本即可，无需对该分支重复应用下面的上游补丁。节点应更新到 `v0.1.0-core-upgrade.28`。已有上游补丁只覆盖原有分支，不能代替扩展后端修复。
 
 对接基线：`cedar2025/Xboard` commit `4f48e61a2cbc6db5338872b6bdb45ef954ec1256`。本仓库提供 `docs/patches/Xboard-hysteria2-port-hopping.patch`，没有替你修改或推送第三方仓库。
 
